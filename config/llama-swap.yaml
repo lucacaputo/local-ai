@@ -1,0 +1,32 @@
+# llama-swap: loads llama-server on the first request and unloads it after `ttl` seconds idle.
+# Start with:  llama-swap -config config\llama-swap.yaml -listen 127.0.0.1:8080
+# (the default listen address is :8080 on ALL interfaces, so always pass -listen)
+# LOCAL_AI_ROOT must point at the folder holding bin\ and models\ (D:\local-ai, decision-003).
+healthCheckTimeout: 180
+logLevel: info
+logToStdout: "proxy"
+startPort: 10001
+
+macros:
+  llama-server: >
+    ${env.LOCAL_AI_ROOT}\bin\llama.cpp-b11719\llama-server.exe
+    --host 127.0.0.1 --port ${PORT}
+  # 128K context, decision-004. Keep in sync with CLAUDE_CODE_MAX_CONTEXT_TOKENS in claude-settings.json.
+  ctx: 131072
+
+models:
+  "local-coder":
+    name: "Local Coder"
+    description: "Qwen3.6 27B Q4_K_M, coding and agentic edits"
+    # unload the weights after 5 minutes without requests (PRD F5)
+    ttl: 300
+    # local-light starts as an alias of the coder (PRD F2, O3)
+    aliases:
+      - "local-light"
+    cmd: |
+      ${llama-server}
+      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.6-27B-Q4_K_M.gguf
+      --jinja -c ${ctx} -ngl 99 -fa on
+      # 2 slots: a background request no longer waits behind a long generation (TASK-005 measurement)
+      --parallel 2
+      --cache-type-k q8_0 --cache-type-v q8_0
