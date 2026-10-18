@@ -1,0 +1,93 @@
+# Starts the local AI stack: llama-swap (model loads on first use) and the LiteLLM router, both on
+# loopback, secrets injected from Credential Manager, then publishes the router on the tailnet.
+# Nothing is started at boot; run scripts\ai-down.ps1 to stop everything and free the GPU.
+#
+#   scripts\ai-up.ps1 [-Warm] [-NoTailnet] [-Force]
+#     -Warm       load the model now instead of on the first request
+#     -NoTailnet  do not publish port 4000 on the tailnet
+#     -Force      start even if a game or other GPU work seems to be running
+param(
+  [switch]$Warm,
+  [switch]$NoTailnet,
+  [switch]$Force,
+  [int]$MinFreeVramMiB = 22000,                 # model + 128K KV cache need about 21.6 GB (decision-004)
+  [string]$GamePathPattern                      # override of the game-detection pattern (for tests)
+)
+$ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\lib\secrets.ps1"
+. "$PSScriptRoot\lib\stack.ps1"
+$clock = [Diagnostics.Stopwatch]::StartNew()
+$root = Get-AiRoot
+$repo = Split-Path $PSScriptRoot -Parent
+$swapExe = Join-Path $root 'bin\llama-swap-v265\llama-swap.exe'
+$swapUrl = 'http://127.0.0.1:8080'
+$routerUrl = 'http://127.0.0.1:4000'
+
+# 1. installed?
+foreach ($need in @($swapExe, (Join-Path $root 'bin\llama.cpp-b11719\llama-server.exe'), (Join-Path $root 'litellm-venv\Scripts\litellm.exe'), (Join-Path $root 'models\Qwen3.6-27B-Q4_K_M.gguf'))) {
+  if (-not (Test-Path $need)) { throw "Missing $need. Run scripts\install.ps1 first." }
+}
+if (-not (Get-LocalAiSecret)) { throw 'No router key yet. Run scripts\init-secrets.ps1 first.' }
+$key = Get-LocalAiRouterKey
+$auth = @{ 'x-litellm-api-key' = "Bearer $key" }
+
+# 2. already up? (no duplicates)
+$swapUp = Test-Http "$swapUrl/health"
+$routerUp = Test-Http "$routerUrl/health/liveliness"
+if ($swapUp -and $routerUp) {
+  "Stack is already running (llama-swap $swapUrl, router $routerUrl). Nothing started."
+  return
+}
+if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001)) {
+  throw 'The stack is only partly running or a port is taken. Run scripts\ai-down.ps1, then start again.'
+}
+
+# 3. guard: do not start on top of a game or other heavy GPU work
+if (-not $Force) {
+  $games = if ($GamePathPattern) { Find-GameProcesses $GamePathPattern } else { Find-GameProcesses }
+  $free = Get-VramFreeMiB
+  $why = @()
+  if ($games) { $why += "game process running: $($games -join ', ')" }
+  if ($free -lt $MinFreeVramMiB) { $why += "only $free MiB of VRAM free, the model needs about $MinFreeVramMiB MiB" }
+  if ($why) { throw ("Not starting: " + ($why -join '; ') + ". Close the game or use -Force.") }
+}
+
+# 4. start
+$baseline = Get-VramUsedMiB
+New-Item -ItemType Directory -Force (Join-Path $root 'logs'), (Join-Path $root 'run') | Out-Null
+$env:LOCAL_AI_ROOT = $root
+try {
+  $swap = Start-Process $swapExe -ArgumentList '-config', (Join-Path $repo 'config\llama-swap.yaml'), '-listen', '127.0.0.1:8080' `
+    -RedirectStandardOutput (Join-Path $root 'logs\llama-swap.out.log') -RedirectStandardError (Join-Path $root 'logs\llama-swap.err.log') -WindowStyle Hidden -PassThru
+  for ($i = 0; $i -lt 60 -and -not (Test-Http "$swapUrl/health"); $i++) { Start-Sleep 1 }
+  if (-not (Test-Http "$swapUrl/health")) { throw "llama-swap did not become healthy; see $root\logs\llama-swap.err.log" }
+  & "$PSScriptRoot\start-litellm.ps1" -Root $root | Out-Null
+  if (-not (Test-Http "$routerUrl/v1/models" $auth 10)) { throw 'Router is up but rejects the stored key on /v1/models.' }
+} catch {
+  Write-Warning "Start failed: $($_.Exception.Message) - cleaning up."
+  & "$PSScriptRoot\ai-down.ps1" | Out-Null
+  throw
+}
+
+# 5. tailnet
+$tailnet = ''
+if (-not $NoTailnet) {
+  $ts = Get-TailscaleExe
+  if ((Test-Path $ts) -and ((Invoke-Quiet $ts @('status')) -notmatch 'Logged out|stopped')) {
+    Invoke-Quiet $ts @('serve', '--bg', '--tcp', '4000', 'tcp://127.0.0.1:4000') | Out-Null
+    $ip = (Invoke-Quiet $ts @('ip', '-4')).Trim()
+    $tailnet = "tailnet http://${ip}:4000"
+  } else { Write-Warning 'Tailscale is not signed in; the router is not published on the tailnet.' }
+}
+
+# 6. optional warm-up
+if ($Warm) {
+  $w = [Diagnostics.Stopwatch]::StartNew()
+  $b = @{ model = 'local-coder'; max_tokens = 5; messages = @(@{ role = 'user'; content = 'hi' }) } | ConvertTo-Json -Depth 5
+  Invoke-RestMethod "$routerUrl/v1/chat/completions" -Method Post -ContentType 'application/json' -Headers $auth -Body $b -TimeoutSec 300 | Out-Null
+  "Model loaded in $([math]::Round($w.Elapsed.TotalSeconds, 1)) s."
+}
+
+@{ startedAt = (Get-Date).ToString('o'); vramBaselineMiB = $baseline; llamaSwapPid = $swap.Id } | ConvertTo-Json | Set-Content (Get-StateFile $root)
+"Stack healthy in $([math]::Round($clock.Elapsed.TotalSeconds, 1)) s: llama-swap $swapUrl, router $routerUrl$(if ($tailnet) { ", $tailnet" }). The model loads on the first request$(if ($Warm) { ' (already loaded)' })."
+"Use: scripts\claude-local.ps1   Stop: scripts\ai-down.ps1"

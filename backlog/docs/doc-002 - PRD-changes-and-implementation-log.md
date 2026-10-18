@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-18 17:08'
+updated_date: '2026-10-18 17:16'
 ---
 # PRD changes and implementation log
 
@@ -21,6 +21,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | llama.cpp "CUDA 12.8+ build" (R6) | Official `win-cuda-13.4-x64` build plus cudart | No 12.8 build exists; 13.4 matches the driver | decision-002 |
 | Models and binaries location (not specified) | `D:\local-ai` (SN850X), outside the repo, `LOCAL_AI_ROOT` | Keeps weights out of git, free space on D: | decision-003 |
 | `install.ps1` "checks drivers/CUDA ... verifies Tailscale" (section 8) | Also installs missing uv and Tailscale with winget at pinned versions and downloads the hash-verified model; never installs the NVIDIA driver | Repeatable setup from a bare machine | TASK-008, `scripts/versions.psd1` |
+| `ai-up`/`ai-down` optional niceties (O8, section 8) | Game guard built (game-library process paths or less than 22000 MiB VRAM free, `-Force` overrides); no GPU power limit in the scripts (manual `nvidia-smi -pl`, needs admin) | Measured 507-541 W under load; limit needs elevation and is optional | decision-007, TASK-009 |
 | llama-swap defaults (section 5) | Idle `ttl` 300 s, `--parallel 2`, `local-light` as an alias; always started with `-listen 127.0.0.1:8080` | Measured unload (306 s), parallel-slot comparison; llama-swap listens on all interfaces by default | TASK-005 |
 | LiteLLM to local server over `/v1/messages` (R3, F3) | LiteLLM's `openai/` provider, which calls llama-swap's `/v1/responses` | The `anthropic/` provider type would forward the client OAuth token to the local server | TASK-003 |
 
@@ -36,6 +37,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS` |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
 | O7 secret store | Resolved: Credential Manager |
+| O8 game guard, power limit | Resolved: guard yes, power limit no (decision-007) |
 | O10 pins | Recorded in `scripts/versions.psd1`; re-confirm at the end of the MVP |
 
 ## Carried forward to later milestones
