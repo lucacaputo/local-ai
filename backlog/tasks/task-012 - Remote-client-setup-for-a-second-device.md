@@ -1,11 +1,11 @@
 ---
 id: TASK-012
 title: Remote client setup for a second device
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-18 21:00'
-updated_date: '2026-10-18 21:09'
+updated_date: '2026-10-18 21:28'
 labels: []
 milestone: m-1
 dependencies: []
@@ -22,8 +22,8 @@ F1 and F3 require the same /model list on the users other devices, not just the 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Documented and scripted client setup for a second device: ANTHROPIC_BASE_URL on the tailnet address, x-litellm-api-key header, Claude Code settings with the same Local Coder and Local Light rows, no ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY
-- [ ] #2 The router key on the device lives in an OS secret store, not in a plaintext file or the repo
-- [ ] #3 The setup works on the device types the user actually has (confirmed with the user at start)
+- [x] #2 The router key on the device lives in an OS secret store, not in a plaintext file or the repo
+- [x] #3 The setup works on the device types the user actually has (confirmed with the user at start)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,4 +41,12 @@ Device: Mac laptop (user confirmed), Claude Code installed with the same subscri
 
 <!-- SECTION:NOTES:BEGIN -->
 Built for a Mac (user confirmed; Claude Code installed with the subscription, Tailscale not yet installed). Files: scripts/mac/setup-client.sh, scripts/mac/claude-local.sh, scripts/copy-router-key.ps1 (PC), docs/remote-client-macos.md. Checked here: bash -n; both Mac scripts against stubbed security/claude (bad URL rejected with rc 2, URL file written, key requested through security's own prompt not as an argument, launcher sets ANTHROPIC_BASE_URL and the x-litellm-api-key header and removes ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN for the child, missing URL gives rc 1); copy-router-key.ps1 on the PC (clipboard held the 57-char key, then 0 chars after 60 s, key never printed). Not yet checked: the real Keychain and Tailscale on the Mac. AC 2 and 3 wait for the user to run the setup on the Mac.
+
+Run on the Mac by the user: Tailscale joined, repo cloned, key copied with copy-router-key.ps1, setup-client.sh stored it in the Keychain, ai-up on the PC, then reachability check, claude-local.sh, /model and a Local Coder message all worked ("everything smooth"). Not measured on the Mac: full multi-step edit and ACL behaviour, both TASK-013.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Second device (Mac laptop) can use the stack over Tailscale. scripts/mac/setup-client.sh stores the router URL in ~/.config/local-ai/router-url and the key in the login Keychain through the security prompt (no argument, no file); scripts/mac/claude-local.sh launches Claude Code with the router URL, the x-litellm-api-key header and config/claude-settings.json, with ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN removed so the subscription login stays. scripts/copy-router-key.ps1 moves the key from the PC without printing it and clears the clipboard after 60 s. docs/remote-client-macos.md covers setup and troubleshooting. Verified with stubs here and on the real Mac by the user. Follow-ups: TASK-013 (acceptance run from the Mac, Tailscale ACL) and TASK-014 (LAN scan). Only the Mac is covered; a Windows or Linux device would need its own variant.
+<!-- SECTION:FINAL_SUMMARY:END -->
