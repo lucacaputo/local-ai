@@ -1,5 +1,6 @@
 # Starts the LiteLLM router with the master key injected from Credential Manager.
 # The key lives only in the router process environment (never in a file or argument).
+# Loopback only; remote devices reach it through `tailscale serve --tcp 4000 tcp://127.0.0.1:4000`.
 # Usage: scripts\start-litellm.ps1 [-ListenHost 127.0.0.1] [-Port 4000] [-Root D:\local-ai]
 param(
   [string]$ListenHost = '127.0.0.1',
@@ -9,10 +10,16 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\secrets.ps1"
 
+# The router stays on loopback; tailnet access is published by `tailscale serve` (decision-006).
+if ($ListenHost -notin @('127.0.0.1', '::1', 'localhost')) { throw "Refusing to bind the router to '$ListenHost': loopback only (see decision-006)." }
+
 $repo = Split-Path $PSScriptRoot -Parent
 $exe = Join-Path $Root 'litellm-venv\Scripts\litellm.exe'
 if (-not (Test-Path $exe)) { throw "LiteLLM not found at $exe" }
-if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) { throw "Port $Port is already in use." }
+# Another listener on the same port is fine only on a different address (tailscaled publishes the tailnet address).
+$clash = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalAddress -in @($ListenHost, '0.0.0.0', '::') }
+if ($clash) { throw "Port $Port is already in use on $($clash.LocalAddress) (pid $($clash.OwningProcess))." }
 $logs = Join-Path $Root 'logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 
