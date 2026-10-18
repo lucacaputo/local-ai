@@ -1,0 +1,22 @@
+# LiteLLM router: Claude pass-through (client subscription token) + local models.
+# No api_key on anthropic/*: requests without a subscription token fail with 401
+# instead of falling back to API billing. See backlog TASK-003.
+model_list:
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: "anthropic/*"
+
+  # openai/ route on purpose: the anthropic/ provider type forwards the client's
+  # OAuth token to its api_base, which would hand it to the local server.
+  - model_name: local-coder
+    litellm_params:
+      model: openai/local-coder
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none  # llama-server runs without auth; not a secret
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+  telemetry: false
