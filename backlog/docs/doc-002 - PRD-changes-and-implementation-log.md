@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-18 21:04'
+updated_date: '2026-10-18 21:45'
 ---
 # PRD changes and implementation log
 
@@ -24,6 +24,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | llama-swap defaults (section 5) | Idle `ttl` 300 s, `--parallel 2 -kvu` (unified KV pool, so one request can use the full 128K; without `-kvu` each slot gets only 64K, found in the TASK-010 acceptance run), `local-light` as an alias; always started with `-listen 127.0.0.1:8080` | Measured unload (306 s), parallel-slot comparison; llama-swap listens on all interfaces by default | TASK-005, TASK-010 |
 | Phase 3 bake-off (sections 6, 9; R4 gate; O1-O3) | Skipped. Qwen3.6 27B Q4_K_M stays `local-coder`, `local-light` stays an alias, Claude Code stays the harness (no OpenCode trial) | User decision 2026-10-18: community consensus already favours Qwen, and Claude Code is the harness the user works in; the benchmark would cost time and tokens for no change in choice | m-1 plan |
 | Router key failures (hardening carry-over) | `config/custom_auth.py` (LiteLLM `custom_auth`) compares the `x-litellm-api-key` or `Authorization` bearer with the master key in constant time and answers 401 otherwise. Before: no key gave HTTP 500 (the auth error handler imports the `prisma` package, absent without a database) and a wrong key gave 400 ("No connected db") | Both were opaque for remote clients with a misconfigured key. Installing `prisma` fixed only the no-key case; the hook fixes both with no new dependency. Verified: none, wrong, wrong-suffix keys give 401; the right key (either header) gives 200; `/health/liveliness` stays open; `local-coder` and `sonnet` answer through `claude-local` | TASK-011 |
+| Tailscale ACL (R5, "Tailscale ACL limits access to the user's own devices") | Admin-console policy: one grant `{"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["tcp:4000"]}`; the default allow-all grant is removed, the default `ssh` check rule (own devices) is kept | Only the user's own devices can reach port 4000 on the PC, and nothing else on the PC over the tailnet. Applied by the user in the admin console (no API token in this setup) | TASK-013 |
 | LiteLLM to local server over `/v1/messages` (R3, F3) | LiteLLM's `openai/` provider, which calls llama-swap's `/v1/responses` | The `anthropic/` provider type would forward the client OAuth token to the local server | TASK-003 |
 
 ## Spike and open-point status
@@ -44,7 +45,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 ## Carried forward to later milestones
 
 - Bake-off (skipped, see above): the hard vs soft tool-call failure definition and the wrong-path first Reads (4/18 and 7/7 in the spikes) are not measured. Reopen if they become a problem.
-- Remote milestone: repeat the reachability check from a second tailnet device; tighten the Tailscale ACL; give each device the router key.
+- Remote (done in m-1): second tailnet device reachability and the ACL are recorded in the m-1 section below; the LAN scan (A4) is TASK-014.
 - Hardening: parallel tool results can overflow the 128K window before compaction runs.
 
 ## Pinned versions that passed the MVP acceptance run (TASK-010)
@@ -58,3 +59,14 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | Tailscale | 1.104.1 |
 | Claude Code | 2.1.302 (client, not pinned by the scripts) |
 | NVIDIA driver | 617.42 (RTX 5090, CUDA 13.x runtime bundled) |
+
+## Remote acceptance run from a Mac (TASK-013)
+
+| Check | Result |
+|---|---|
+| Device | Mac laptop on the same tailnet, Claude Code with the same subscription login, `scripts/mac/claude-local.sh`, router key in the Keychain |
+| `/model` | Claude models plus Local Coder and Local Light listed; local-coder and a Claude model both answered |
+| Multi-step edit | `ts-demo` edit task (discount field, `count()`, tests, `npm test`) completed with local-coder from the Mac; all tests pass |
+| ACL applied | Reachability check after saving the policy still returned 401 (reachable, no key) |
+| After `ai-down` | The same request from the Mac fails (curl prints 000); VRAM 23646 -> 2276 MiB |
+| Not tested | A device outside the tailnet or owned by another user being denied by the ACL (no such device); LAN exposure is TASK-014 |
