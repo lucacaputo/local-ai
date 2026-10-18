@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-18 20:52'
+updated_date: '2026-10-18 21:04'
 ---
 # PRD changes and implementation log
 
@@ -22,6 +22,8 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | `install.ps1` "checks drivers/CUDA ... verifies Tailscale" (section 8) | Also installs missing uv and Tailscale with winget at pinned versions and downloads the hash-verified model; never installs the NVIDIA driver | Repeatable setup from a bare machine | TASK-008, `scripts/versions.psd1` |
 | `ai-up`/`ai-down` optional niceties (O8, section 8) | Game guard built (game-library process paths or less than 22000 MiB VRAM free, `-Force` overrides); no GPU power limit in the scripts (manual `nvidia-smi -pl`, needs admin) | Measured 507-541 W under load; limit needs elevation and is optional | decision-007, TASK-009 |
 | llama-swap defaults (section 5) | Idle `ttl` 300 s, `--parallel 2 -kvu` (unified KV pool, so one request can use the full 128K; without `-kvu` each slot gets only 64K, found in the TASK-010 acceptance run), `local-light` as an alias; always started with `-listen 127.0.0.1:8080` | Measured unload (306 s), parallel-slot comparison; llama-swap listens on all interfaces by default | TASK-005, TASK-010 |
+| Phase 3 bake-off (sections 6, 9; R4 gate; O1-O3) | Skipped. Qwen3.6 27B Q4_K_M stays `local-coder`, `local-light` stays an alias, Claude Code stays the harness (no OpenCode trial) | User decision 2026-10-18: community consensus already favours Qwen, and Claude Code is the harness the user works in; the benchmark would cost time and tokens for no change in choice | m-1 plan |
+| Router key failures (hardening carry-over) | `config/custom_auth.py` (LiteLLM `custom_auth`) compares the `x-litellm-api-key` or `Authorization` bearer with the master key in constant time and answers 401 otherwise. Before: no key gave HTTP 500 (the auth error handler imports the `prisma` package, absent without a database) and a wrong key gave 400 ("No connected db") | Both were opaque for remote clients with a misconfigured key. Installing `prisma` fixed only the no-key case; the hook fixes both with no new dependency. Verified: none, wrong, wrong-suffix keys give 401; the right key (either header) gives 200; `/health/liveliness` stays open; `local-coder` and `sonnet` answer through `claude-local` | TASK-011 |
 | LiteLLM to local server over `/v1/messages` (R3, F3) | LiteLLM's `openai/` provider, which calls llama-swap's `/v1/responses` | The `anthropic/` provider type would forward the client OAuth token to the local server | TASK-003 |
 
 ## Spike and open-point status
@@ -33,6 +35,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | S3 (Blackwell, N1) | Pass: 65/65 layers on GPU, 63-77 tok/s (TASK-002) |
 | S4 (multi-step tool use) | Pass directly and via the router; tool-call error rate not yet within the R4 gate, see below (TASK-002, TASK-003) |
 | O4 context size | Resolved: 128K |
+| O1 alternative harness, O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Claude Code, Qwen3.6 27B, alias. Reopen only if tool-call failures become a daily problem |
 | O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS` |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
 | O8 game guard, power limit | Resolved: guard yes, power limit no (decision-007) |
@@ -40,9 +43,9 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 
 ## Carried forward to later milestones
 
-- Bake-off: define a hard tool-call failure (malformed call, loop, giving up; gated at 5%) versus a recovered soft error (reported only). The model invents wrong absolute paths (4/18 and 7/7 first Reads in the spikes); measure it.
+- Bake-off (skipped, see above): the hard vs soft tool-call failure definition and the wrong-path first Reads (4/18 and 7/7 in the spikes) are not measured. Reopen if they become a problem.
 - Remote milestone: repeat the reachability check from a second tailnet device; tighten the Tailscale ACL; give each device the router key.
-- Hardening: a missing router key returns HTTP 500 instead of 401 (LiteLLM without a database); parallel tool results can overflow the 128K window before compaction runs.
+- Hardening: parallel tool results can overflow the 128K window before compaction runs.
 
 ## Pinned versions that passed the MVP acceptance run (TASK-010)
 
