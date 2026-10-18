@@ -1,0 +1,26 @@
+# Model weights
+*.gguf
+*.safetensors
+models/
+
+# Downloaded binaries (llama.cpp, llama-swap), installed by scripts/install.ps1
+bin/
+tools/
+
+# LiteLLM venv and Python caches
+.venv/
+venv/
+__pycache__/
+
+# Logs
+*.log
+logs/
+
+# Secrets and local env
+.env
+.env.*
+*.key
+*.pem
+
+# Local bench output
+bench/results/raw/
