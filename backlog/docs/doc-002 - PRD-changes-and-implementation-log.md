@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-18 21:45'
+updated_date: '2026-10-18 21:59'
 ---
 # PRD changes and implementation log
 
@@ -45,7 +45,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 ## Carried forward to later milestones
 
 - Bake-off (skipped, see above): the hard vs soft tool-call failure definition and the wrong-path first Reads (4/18 and 7/7 in the spikes) are not measured. Reopen if they become a problem.
-- Remote (done in m-1): second tailnet device reachability and the ACL are recorded in the m-1 section below; the LAN scan (A4) is TASK-014.
+- Remote (done in m-1): second tailnet device reachability and the ACL are recorded in the m-1 section below; LAN exposure (A4) is recorded in the TASK-014 section.
 - Hardening: parallel tool results can overflow the 128K window before compaction runs.
 
 ## Pinned versions that passed the MVP acceptance run (TASK-010)
@@ -70,3 +70,15 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | ACL applied | Reachability check after saving the policy still returned 401 (reachable, no key) |
 | After `ai-down` | The same request from the Mac fails (curl prints 000); VRAM 23646 -> 2276 MiB |
 | Not tested | A device outside the tailnet or owned by another user being denied by the ACL (no such device); LAN exposure is TASK-014 |
+
+## LAN exposure check, A4 (TASK-014)
+
+| Check | Result |
+|---|---|
+| Stack state | `ai-up` running, model loaded (llama-server listening) |
+| PC listeners of the stack (from the PC) | llama-server 127.0.0.1:10001; llama-swap 127.0.0.1:8080; router 127.0.0.1:4000 and the tailnet address 100.111.199.22:4000 (`tailscale serve`). Nothing on the Wi-Fi address 192.168.1.101 |
+| LAN scan from the Mac, Tailscale off (confirmed: tailnet address gave 000) | `nmap -Pn -p 4000,8080,10001-10010 192.168.1.101` (nmap 7.992): all 12 ports `filtered` (Windows Firewall drops the probes; the services are also loopback-bound) |
+| Full TCP scan (`-p-`) | Not completed: too slow against a firewall that drops probes; stopped by the user. Other open Windows ports were therefore not enumerated |
+| Public-address scan | Skipped by the user's decision. Exposure would need a router port-forward or UPnP mapping, and the services only bind to loopback; the PC also has a NordVPN interface that would mask the public address |
+
+The PC has a NordVPN interface (`NordLynx`, 10.5.0.2); nothing from the stack listens on it either.
