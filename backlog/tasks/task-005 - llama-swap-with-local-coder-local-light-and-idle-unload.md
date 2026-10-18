@@ -4,7 +4,7 @@ title: 'llama-swap with local-coder, local-light and idle unload'
 status: To Do
 assignee: []
 created_date: '2026-10-18 14:13'
-updated_date: '2026-10-18 14:55'
+updated_date: '2026-10-18 15:49'
 labels: []
 milestone: m-0
 dependencies:
@@ -30,3 +30,9 @@ The GPU is shared with gaming, so model weights must load only when needed and l
 - [ ] #4 Model loads on first request and VRAM is released after the configured `ttl`; the measured unload is recorded
 - [ ] #5 Number of llama-server parallel slots (`-np` 1, 2 or 4) is chosen by comparing Claude Code latency with background requests running; the choice and numbers are recorded
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+From TASK-004 (2026-10-18): use -c 131072 (128K) in the llama-server flags, not the 64K from TASK-002; measured 23.6 GB VRAM total, 56 tok/s at a 94K prompt. Claude Code is told the same window via CLAUDE_CODE_MAX_CONTEXT_TOKENS=131072.
+<!-- SECTION:NOTES:END -->

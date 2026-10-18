@@ -14,6 +14,13 @@ model_list:
       api_base: http://127.0.0.1:8080/v1
       api_key: none  # llama-server runs without auth; not a secret
 
+  # Same upstream as local-coder for now; re-pointed via llama-swap later (TASK-005).
+  - model_name: local-light
+    litellm_params:
+      model: openai/local-coder
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 

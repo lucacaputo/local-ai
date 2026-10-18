@@ -1,0 +1,19 @@
+{
+  "modelPicker": {
+    "options": [
+      {
+        "model": "local-coder",
+        "label": "Local Coder",
+        "description": "Qwen3.6 27B on the home RTX 5090"
+      },
+      {
+        "model": "local-light",
+        "label": "Local Light",
+        "description": "Local model for reviews and text (PR, Jira)"
+      }
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "131072"
+  }
+}
