@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-18 17:16'
+updated_date: '2026-10-18 20:52'
 ---
 # PRD changes and implementation log
 
@@ -17,12 +17,11 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | LiteLLM binds the Tailscale address and loopback (R5, section 4) | LiteLLM, llama-swap and llama-server bind to 127.0.0.1 only; `tailscale serve` publishes port 4000 on the tailnet | uvicorn takes one bind address; this leaves nothing on the LAN by construction | decision-006, TASK-007 |
 | Windows Firewall rule scoped to the Tailscale interface (R5) | No extra rule: the Tailscale installer's `Tailscale-In` rules already limit inbound to the Tailscale addresses | Nothing else listens on a non-loopback address | decision-006, TASK-007 |
 | Router master key and a separate client local key (F6, R1) | One key serves as master and client key | Separate client keys need LiteLLM virtual keys, which need a database | decision-005, TASK-006 |
-| 1Password CLI or Windows Credential Manager (O7) | Windows Credential Manager (target `local-ai/router-key`) | 1Password not installed; built into Windows | decision-001, TASK-001, TASK-006 |
 | llama.cpp "CUDA 12.8+ build" (R6) | Official `win-cuda-13.4-x64` build plus cudart | No 12.8 build exists; 13.4 matches the driver | decision-002 |
 | Models and binaries location (not specified) | `D:\local-ai` (SN850X), outside the repo, `LOCAL_AI_ROOT` | Keeps weights out of git, free space on D: | decision-003 |
 | `install.ps1` "checks drivers/CUDA ... verifies Tailscale" (section 8) | Also installs missing uv and Tailscale with winget at pinned versions and downloads the hash-verified model; never installs the NVIDIA driver | Repeatable setup from a bare machine | TASK-008, `scripts/versions.psd1` |
 | `ai-up`/`ai-down` optional niceties (O8, section 8) | Game guard built (game-library process paths or less than 22000 MiB VRAM free, `-Force` overrides); no GPU power limit in the scripts (manual `nvidia-smi -pl`, needs admin) | Measured 507-541 W under load; limit needs elevation and is optional | decision-007, TASK-009 |
-| llama-swap defaults (section 5) | Idle `ttl` 300 s, `--parallel 2`, `local-light` as an alias; always started with `-listen 127.0.0.1:8080` | Measured unload (306 s), parallel-slot comparison; llama-swap listens on all interfaces by default | TASK-005 |
+| llama-swap defaults (section 5) | Idle `ttl` 300 s, `--parallel 2 -kvu` (unified KV pool, so one request can use the full 128K; without `-kvu` each slot gets only 64K, found in the TASK-010 acceptance run), `local-light` as an alias; always started with `-listen 127.0.0.1:8080` | Measured unload (306 s), parallel-slot comparison; llama-swap listens on all interfaces by default | TASK-005, TASK-010 |
 | LiteLLM to local server over `/v1/messages` (R3, F3) | LiteLLM's `openai/` provider, which calls llama-swap's `/v1/responses` | The `anthropic/` provider type would forward the client OAuth token to the local server | TASK-003 |
 
 ## Spike and open-point status
@@ -36,12 +35,23 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | O4 context size | Resolved: 128K |
 | O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS` |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
-| O7 secret store | Resolved: Credential Manager |
 | O8 game guard, power limit | Resolved: guard yes, power limit no (decision-007) |
-| O10 pins | Recorded in `scripts/versions.psd1`; re-confirm at the end of the MVP |
+| O10 pins | Resolved: verified on the real stack in the MVP acceptance run (below); source of truth is `scripts/versions.psd1` |
 
 ## Carried forward to later milestones
 
 - Bake-off: define a hard tool-call failure (malformed call, loop, giving up; gated at 5%) versus a recovered soft error (reported only). The model invents wrong absolute paths (4/18 and 7/7 first Reads in the spikes); measure it.
 - Remote milestone: repeat the reachability check from a second tailnet device; tighten the Tailscale ACL; give each device the router key.
 - Hardening: a missing router key returns HTTP 500 instead of 401 (LiteLLM without a database); parallel tool results can overflow the 128K window before compaction runs.
+
+## Pinned versions that passed the MVP acceptance run (TASK-010)
+
+| Component | Version |
+|---|---|
+| llama.cpp | b11719 (win-cuda-13.4-x64, `llama-server` 0.7.0-dev, commit 5aeac37a3) |
+| llama-swap | v265 (d1e743f) |
+| LiteLLM | 1.106.0 (Python 3.12, uv 0.13.1) |
+| Model | Qwen3.6-27B-Q4_K_M.gguf (unsloth), SHA-256 in `scripts/versions.psd1` |
+| Tailscale | 1.104.1 |
+| Claude Code | 2.1.302 (client, not pinned by the scripts) |
+| NVIDIA driver | 617.42 (RTX 5090, CUDA 13.x runtime bundled) |

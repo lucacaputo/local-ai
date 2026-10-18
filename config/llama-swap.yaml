@@ -28,5 +28,5 @@ models:
       -m ${env.LOCAL_AI_ROOT}\models\Qwen3.6-27B-Q4_K_M.gguf
       --jinja -c ${ctx} -ngl 99 -fa on
       # 2 slots: a background request no longer waits behind a long generation (TASK-005 measurement)
-      --parallel 2
+      --parallel 2 -kvu
       --cache-type-k q8_0 --cache-type-v q8_0
