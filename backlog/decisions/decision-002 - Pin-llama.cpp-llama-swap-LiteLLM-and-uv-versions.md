@@ -15,10 +15,11 @@ Pin these versions:
 - llama-swap `v265`
 - LiteLLM `v1.106.0` (the PRD needs at least v1.81.14 for OAuth forwarding)
 - uv `0.13.1`
+- Tailscale `1.104.1` (winget `Tailscale.Tailscale`)
 - Claude Code at least `2.1.257` (2.1.302 installed)
 
 ## Consequences
 
-- `install.ps1` downloads exactly these versions, so setups are reproducible.
+- `scripts/versions.psd1` is the single source of truth for every pin (with SHA-256 hashes); `scripts/install.ps1` installs exactly these versions, including uv and Tailscale through winget, so setups are reproducible. `config/llama-swap.yaml` still names the `llama.cpp-b11719` folder and must be updated together with the llama.cpp pin.
 - The CUDA 13.4 build matches the driver; the 12.4 build would need JIT compilation for Blackwell (sm_120).
 - Re-confirm the pins after the spikes pass (TASK-002, TASK-003) and record the final set; bump deliberately, not by tracking "latest".
