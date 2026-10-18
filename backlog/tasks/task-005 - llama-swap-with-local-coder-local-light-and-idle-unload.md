@@ -4,6 +4,7 @@ title: 'llama-swap with local-coder, local-light and idle unload'
 status: To Do
 assignee: []
 created_date: '2026-10-18 14:13'
+updated_date: '2026-10-18 14:55'
 labels: []
 milestone: m-0
 dependencies:
@@ -27,4 +28,5 @@ The GPU is shared with gaming, so model weights must load only when needed and l
 - [ ] #2 llama-swap and llama-server bind to loopback only
 - [ ] #3 LiteLLM routes `local-coder` and `local-light` through llama-swap, and both work from Claude Code
 - [ ] #4 Model loads on first request and VRAM is released after the configured `ttl`; the measured unload is recorded
+- [ ] #5 Number of llama-server parallel slots (`-np` 1, 2 or 4) is chosen by comparing Claude Code latency with background requests running; the choice and numbers are recorded
 <!-- AC:END -->

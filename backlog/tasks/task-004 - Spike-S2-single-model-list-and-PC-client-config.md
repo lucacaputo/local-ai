@@ -4,6 +4,7 @@ title: 'Spike S2: single /model list and PC client config'
 status: To Do
 assignee: []
 created_date: '2026-10-18 14:13'
+updated_date: '2026-10-18 14:55'
 labels: []
 milestone: m-0
 dependencies:
@@ -28,4 +29,5 @@ The user switches models through `/model` and wants Claude and local models in o
 - [ ] #3 Context window Claude Code assumes for local models matches the server (64K), and auto-compaction triggers before the limit in a long session
 - [ ] #4 Chosen mechanism (discovery vs custom entries) and labels are recorded (O5); if F2 was needed, that is recorded
 - [ ] #5 A secret-free PC client config template (`settings.json` / env) is committed, with the local key referenced from the secret store
+- [ ] #6 Any wrong-path Read/Edit tool calls with the normal profile are counted and recorded (the throwaway-profile run in TASK-002 showed many); if they recur, the cause is investigated
 <!-- AC:END -->
