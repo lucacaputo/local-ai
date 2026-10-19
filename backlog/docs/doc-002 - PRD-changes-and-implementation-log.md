@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 22:18'
+updated_date: '2026-10-19 22:35'
 ---
 # PRD changes and implementation log
 
@@ -253,7 +253,7 @@ The control service (TASK-025) applies the same rule.
 
 ## Control service started at logon (TASK-026)
 
-- `scripts/install-control.ps1` registers the scheduled task `local-ai-control` without elevation: triggered at logon of the user and repeated every 10 minutes for an indefinite duration. It runs `conhost.exe --headless powershell.exe … start-control.ps1`, so no console window opens. start-control.ps1 does nothing while the service runs, so the repetition only matters after a crash. The script also starts the service once and publishes `/control` on tailnet port 4000, which tailscale serve keeps across reboots. `-Uninstall` stops the service and removes the task and the route. Both are safe to run twice, and neither starts the AI stack.
+- `scripts/install-control.ps1` registers the scheduled task `local-ai-control` without elevation: triggered at logon of the user and repeated every 10 minutes for an indefinite duration (since TASK-032 the 10-minute check is a separate time trigger, see below). It runs `conhost.exe --headless powershell.exe … start-control.ps1`, so no console window opens. start-control.ps1 does nothing while the service runs, so the repetition only matters after a crash. The script also starts the service once and publishes `/control` on tailnet port 4000, which tailscale serve keeps across reboots. `-Uninstall` stops the service and removes the task and the route. Both are safe to run twice, and neither starts the AI stack.
 - It is a scheduled task rather than a Windows service because the service runs as the user: ai-up reads the router key from the user's Credential Manager. The PC must be on with the user logged in (Wake-on-LAN is out of scope).
 - **Logon race.** The task runs within seconds of logon, before Tailscale is signed in, so Get-AllowedLogins returned nothing and the service refused the Mac (the first logoff test got 401). The repetition cannot fix this, because the service is already running. `control-service.py` now re-reads the allowlist through Get-AllowedLogins on demand: every 60 s, every 5 s while it is empty, and on the first request if it started empty. A changed `allowed-logins.txt` also applies without a restart. A 401 says when the PC has no allowed logins. The router reads the list only once, at start; `start-litellm.ps1` now warns when that list is empty.
 - ACL unchanged: `/control` is a path on tailnet port 4000, already covered by the `autogroup:member → autogroup:self tcp:4000` grant.
@@ -269,7 +269,7 @@ The control service (TASK-025) applies the same rule.
 | Repetition | Service killed at 23:39:28. The task run at 23:46:17 (10 minutes after logon) brought it back at 23:46:18 with 1 allowed login |
 | `install.ps1 -CheckOnly` | Shows "not installed" or "installed, running, /control published" |
 
-The repetition follows a 10-minute grid counted from logon, so a crashed service is back within 10 minutes.
+The repetition followed a 10-minute grid counted from logon, so a crashed service was back within 10 minutes, but only after a logon: a reinstall left nothing scheduled until the next one (fixed in TASK-032).
 
 ## ai-remote on the Mac (TASK-027)
 
@@ -321,3 +321,17 @@ PC addresses: Wi-Fi 192.168.1.101, WSL vEthernet 172.21.160.1, NordLynx 10.5.0.2
 | nmap from the Mac, tailnet name, stack down (`ai-remote.sh down`, VRAM 22,697 -> 1,348 MiB) | 4000 open (the `/control` route keeps it published); all others filtered |
 | Secret scan (73 tracked files, 35 commits, `git log --all -p`) | Pattern hits only name prefixes, in docs and in `init-secrets.ps1`; no token values. No tracked `.env`, `.key`, `.pem`, `.p12` or `.pfx` files, and `allowed-logins.txt` is not tracked. The user's email is in no tracked file and no patch |
 | Router key (exact match inside PowerShell, count only) | In 0 of 73 tracked files, not in the history, in 0 of 76 worktree files (ignored ones included), in 0 of 50 log files |
+
+## Control service restart schedule (TASK-032)
+
+Found while preparing TASK-029. The 10-minute repetition sat on the at-logon trigger, and a logon trigger's repetition starts only at a logon. `install-control.ps1` registers the task again on every run, so after an install nothing was scheduled until the next logon (`NextRunTime` empty). After a reinstall at about 23:55 on 2026-10-19, the runs at 23:56, 00:06 and 00:16 did not happen. A crash in such a window would have kept the service down until someone logged on at the PC. The TASK-026 test missed this because it logged off and on after installing.
+
+Fix: the task has two triggers. The logon trigger, without a repetition, starts the service right after a logon. A time trigger starts at install time and repeats every 10 minutes for an indefinite duration. A time trigger keeps its schedule across logons and reboots, and runs while the user is logged on.
+
+| Check | Result |
+|---|---|
+| Install twice | Next check at 00:33, then 00:34, 10 minutes after each install, with no logon |
+| Triggers | Logon trigger for the user, no repetition. Time trigger from the install time, PT10M, indefinite |
+| Killed service | Killed at 00:24:19. The time trigger ran at 00:34:04 and the service was back at 00:34:05 with 1 allowed login, with no logon in between. Next check set to 00:44:03 |
+| Uninstall twice, install | The second uninstall found nothing to remove. After the install the next check was 10 minutes out, and `install.ps1 -CheckOnly` reported "installed, running, /control published" |
+| Stack | Down throughout |

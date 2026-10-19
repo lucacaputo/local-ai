@@ -1,8 +1,9 @@
 # Installs the control service (TASK-025, TASK-026) so it can be reached when nobody is at the PC: a scheduled
-# task runs scripts\start-control.ps1 at logon of this user and every 10 minutes after (start-control.ps1 does
-# nothing while the service runs, so a crashed service is back within 10 minutes), and the /control route on
-# tailnet port 4000 is published (tailscale serve keeps it across reboots). The AI stack itself is never started
-# by any of this: only an up request to the service starts it. Needs no elevation; safe to run again.
+# task runs scripts\start-control.ps1 at logon of this user and every 10 minutes from the install on
+# (start-control.ps1 does nothing while the service runs, so a crashed service is back within 10 minutes), and
+# the /control route on tailnet port 4000 is published (tailscale serve keeps it across reboots). The AI stack
+# itself is never started by any of this: only an up request to the service starts it. Needs no elevation; safe
+# to run again.
 #
 #   scripts\install-control.ps1              register the task, start the service, publish /control
 #   scripts\install-control.ps1 -Uninstall   stop the service, remove the task and the /control route
@@ -27,13 +28,18 @@ if ($Uninstall) {
 $start = Join-Path $PSScriptRoot 'start-control.ps1'
 # conhost --headless: no console window at logon or on each repetition
 $action = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$start`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 10)).Repetition
+# The 10-minute check is a time trigger of its own: a repetition on the logon trigger only starts at a logon, so
+# after every (re)install nothing would watch the service until the next logon (TASK-032).
+$triggers = @(
+  (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+  (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 10))   # no duration: indefinite
+)
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName $taskName -Description 'local-ai control service (TASK-026): runs scripts\start-control.ps1; never starts the AI stack itself' `
-  -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-"Scheduled task ${taskName}: at logon of $env:USERNAME, then every 10 minutes."
+  -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
+$next = (Get-ScheduledTaskInfo -TaskName $taskName).NextRunTime
+"Scheduled task ${taskName}: at logon of $env:USERNAME and every 10 minutes (next check $(if ($next) { $next.ToString('HH:mm') } else { 'not scheduled' }))."
 & $start
 
 if ($tsUp) {
