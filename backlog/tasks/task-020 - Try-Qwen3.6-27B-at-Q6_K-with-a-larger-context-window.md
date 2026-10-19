@@ -1,11 +1,11 @@
 ---
 id: TASK-020
 title: Add Qwen3.6 27B Q6_K as a second local model with a larger context window
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-19 12:11'
-updated_date: '2026-10-19 13:51'
+updated_date: '2026-10-19 14:15'
 labels: []
 dependencies: []
 references:
@@ -38,7 +38,7 @@ Constraints known now: the two quants cannot be in VRAM together, so llama-swap 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 install.ps1 installs and hash-verifies the Q6_K GGUF next to the Q4_K_M, its SHA-256 is pinned in scripts/versions.psd1, and -CheckOnly reports both models
-- [ ] #2 The Q6_K is a separate entry in config/llama-swap.yaml and config/litellm.yaml and a separate row in the /model picker on the PC and the Mac; local-coder and local-light keep the Q4_K_M model and their 128K window (Claude Code has a per-model compaction window, so option 1 was not needed; the compaction percentage they share was changed by user decision, criterion 9)
+- [x] #2 The Q6_K is a separate entry in config/llama-swap.yaml and config/litellm.yaml and a separate row in the /model picker on the PC and the Mac; local-coder and local-light keep the Q4_K_M model and their 128K window (Claude Code has a per-model compaction window, so option 1 was not needed; the compaction percentage they share was changed by user decision, criterion 9)
 - [x] #3 Q6_K at 128K is measured against the Q4_K_M baseline (23.4 GB in use, 56 tok/s generation and 2,345 tok/s prompt processing at a ~94K-token prompt): VRAM in use, generation and prompt-processing speed
 - [x] #4 At least one larger window for the Q6_K entry (160K, and 192K if the headroom allows) is measured with a near-full prompt; the chosen value leaves at least 1 GB of VRAM free with the desktop idle and shows no slowdown from system-memory fallback
 - [x] #5 Switching between the Q4_K_M and Q6_K entries works in both directions: the other model is unloaded first, VRAM never holds both, and the switch time is measured
@@ -74,10 +74,12 @@ Overflow: 16 parallel full Reads (about 128K tokens of results in one step) fail
 User decisions 2026-10-19: keep local-coder-q6, 160K, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=80 (set in config/claude-settings.json; all three entries answer with it, effectiveWindow unchanged). Criterion 2 condition resolved: Claude Code has modelSettings.<model>.autoCompactWindow, so local-coder stays at 128K (option 1 not needed). Criterion 8 evidence: effectiveWindow per entry inside its server context; near-full prompts at the server window (128,450 tokens on the Q4_K_M at 128K, 160,935 on the Q6_K at 160K) succeed; local-light shares the Q4_K_M server. decision-004: the backlog CLI (1.54.0) can only set a decision title and status, so instead of a new decision with an empty body, decision-004 status now says it is partly superseded by TASK-020 and doc-002 holds the record. Criterion 2 stays open until the user sees Local Coder Q6 in an interactive /model on the PC, and on the Mac after a pull.
 
 User check 2026-10-19: Local Coder Q6 is listed in /model on the PC (it did not answer because the stack was down at the time). The Mac check needs the pushed config and a git pull there.
+
+User checks 2026-10-19: Local Coder Q6 in /model on the PC, and on the Mac after git pull, where it answers (with the stack up).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Added Qwen3.6 27B Q6_K as a third local entry, local-coder-q6, next to the unchanged Q4_K_M local-coder and local-light. install.ps1 now installs a list of hash-pinned models; llama-swap serves the Q6_K on 127.0.0.1:10002 with a 160K window; LiteLLM routes it; the picker has a Local Coder Q6 row. Claude Code gets one global window (163840) and per-model compaction windows (modelSettings.local-coder/local-light.autoCompactWindow = 131072), checked in its debug log. Measured: Q6_K is 15-20% slower (160K: 61.9 tok/s short, 48.1 at 94K, 41.0 at a 161K prompt), holds 27.7 GB, leaves 2.9 GB free, no system-memory fallback; 192K was measured and rejected (1.7 GB free, 37.9 tok/s at full). Switching takes 11.5-13 s and never holds both models. ts-demo passes on the Q6_K. ai-up warns below 28,500 MiB free; ai-up and ai-down cover port 10002. Compaction raised from 70% to 80% by user decision after measuring that the percentage applies to window minus 20K and can only move compaction earlier: local-coder now compacts at about 88.9K instead of 77,750 (doc-002 had ~92K), local-coder-q6 at about 115.1K. TASK-015 conclusion corrected: its 16-Read passes read one line per file; 8 full Reads pass at 70/80/90% on both entries, 16 full Reads (~128K tokens in one step) fail at any value because Claude Code undercounts the text and does not recover from the LiteLLM 400 (follow-up task). README, doc-002 and decision-004 status updated. Open: the interactive /model check on the PC and the Mac (criterion 2).
+Added Qwen3.6 27B Q6_K as a third local entry, local-coder-q6, next to the unchanged Q4_K_M local-coder and local-light. install.ps1 now installs a list of hash-pinned models; llama-swap serves the Q6_K on 127.0.0.1:10002 with a 160K window; LiteLLM routes it; the picker shows Local Coder Q6 on the PC and the Mac (checked by the user). Claude Code gets one global window (163840) and per-model compaction windows (modelSettings.local-coder/local-light.autoCompactWindow = 131072), checked in its debug log. Measured: Q6_K is 15-20% slower (160K: 61.9 tok/s short, 48.1 at 94K, 41.0 at a 161K prompt), holds 27.7 GB, leaves 2.9 GB free, no system-memory fallback; 192K was measured and rejected (1.7 GB free, 37.9 tok/s at full). Switching takes 11.5-13 s and never holds both models. ts-demo passes on the Q6_K. ai-up warns below 28,500 MiB free; ai-up and ai-down cover port 10002. Compaction raised from 70% to 80% by user decision after measuring that the percentage applies to window minus 20K and can only move compaction earlier: local-coder now compacts at about 88.9K instead of 77,750 (doc-002 had ~92K), local-coder-q6 at about 115.1K. TASK-015 conclusion corrected: its 16-Read passes read one line per file; 8 full Reads pass at 70/80/90% on both entries, 16 full Reads (~128K tokens in one step) fail at any value (TASK-021 showed the router cannot fix that). README, doc-002 and decision-004 status updated.
 <!-- SECTION:FINAL_SUMMARY:END -->

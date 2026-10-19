@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 13:45'
+updated_date: '2026-10-19 14:17'
 ---
 # PRD changes and implementation log
 
@@ -37,17 +37,23 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | S1 (OAuth through the mixed router) | Pass: token forwarded to Anthropic only; local server gets `Bearer none` (TASK-003) |
 | S2 (`/model` list, window, compaction) | Pass with 128K (TASK-004); `modelPicker` rows, discovery not needed |
 | S3 (Blackwell, N1) | Pass: 65/65 layers on GPU, 63-77 tok/s (TASK-002) |
-| S4 (multi-step tool use) | Pass directly and via the router; tool-call error rate not yet within the R4 gate, see below (TASK-002, TASK-003) |
+| S4 (multi-step tool use) | Pass directly and via the router; tool-call error rate not measured against the R4 gate, see "Open items after m-2" (TASK-002, TASK-003) |
 | O4 context size | Resolved: 128K for the Q4_K_M entries, 160K for `local-coder-q6` (TASK-020) |
 | O1 alternative harness, O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Claude Code, Qwen3.6 27B, alias. The Q6_K quant of the same model was added as `local-coder-q6` (TASK-020). Reopen only if tool-call failures become a daily problem |
 | O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and per-model `modelSettings.<model>.autoCompactWindow` when local models have different windows (TASK-020) |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
+| O7 secret store | Resolved: Windows Credential Manager, since the 1Password CLI was not installed (decision-001); rotation tested on the PC and the Mac (TASK-017) |
 | O8 game guard, power limit | Resolved: guard yes, power limit no (decision-007) |
-| O10 pins | Resolved: verified on the real stack in the MVP acceptance run (below); source of truth is `scripts/versions.psd1` |
+| O9 RAM upgrade to 64 GB+ | Open by design: no upgrade planned (PRD section 2). Reopen model selection (larger MoE models with CPU offload) if it happens |
+| O10 pins | Resolved: verified on the real stack in the MVP acceptance run (below); source of truth is `scripts/versions.psd1`, listed in the README (TASK-018) |
 
-## Carried forward to later milestones
+## Open items after m-2
 
-- Bake-off (skipped, see above): the hard vs soft tool-call failure definition and the wrong-path first Reads (4/18 and 7/7 in the spikes) are not measured. Reopen if they become a problem.
+- Bake-off (skipped, see above): the hard vs soft tool-call failure definition is not measured. The wrong-path first Read (4/18 and 7/7 in the spikes) still shows up: almost every TASK-020/TASK-021 run first read the files at a wrong path, then retried correctly. Reopen if tool-call failures become a daily problem.
+- Context bursts: one step whose tool results exceed the window (for example 16 parallel full Reads at the 8K cap, about 128K tokens) ends the turn on both local entries. Router-side recovery was tried and reverted (TASK-021). Not tried: a lower Read cap, asking for fewer files per step.
+- Compaction by the local model sometimes returns an empty summary ("automatic compaction failed: summarization produced empty response"), seen in stress tests in TASK-015 and TASK-021; how often it happens in real sessions is unknown.
+- Not tested: a device outside the tailnet or of another user being refused by the ACL, a scan from the public internet and a full `-p-` port scan (TASK-013, TASK-014); interrupting `ai-up` part-way and `ai-down` racing `ai-up` (TASK-016); tool-call reliability of the Q6_K beyond one ts-demo run (TASK-020).
+- LiteLLM logs at startup that `custom_auth_run_common_checks` is not set. It only matters for budgets, model allowlists and rate limits stored in a LiteLLM database, which this router does not have (R7, decision-005), so it stays unset.
 - Remote (done in m-1): second tailnet device reachability and the ACL are recorded in the m-1 section below; LAN exposure (A4) is recorded in the TASK-014 section.
 
 ## Pinned versions that passed the MVP acceptance run (TASK-010)
@@ -148,3 +154,15 @@ Question: does Claude Code recover from a local context overflow if the router r
 | Outcome | Reverted as the task required (no recovery even from a recognised error). `config/litellm.yaml` is unchanged; the hook is kept for reference outside the repo at `D:\local-ai\scratch\ovr\overflow_errors.py.reverted`. After the revert, 8 full Reads and the ts-demo task pass on local-coder |
 
 Remaining risk: one step whose tool results exceed the window (for example 16 parallel Reads at the 8K cap, about 128K tokens) ends the turn on either local entry. Not tried: a lower Read cap (16 x 6K would fit 128K), asking for fewer files per step, compaction reliability of the local model.
+
+## Router key rotation (TASK-017)
+
+| Step | Result |
+|---|---|
+| Before | Old key (SHA-256 prefix `54fc3c6c`) gets 200 on loopback and on the tailnet address |
+| `init-secrets.ps1 -Rotate` | New key (`46b1b607`, 57 characters) stored; still one `local-ai/router-key` item in Credential Manager. The running router still takes the old key (200) and refuses the new one (401) |
+| `ai-down` + `ai-up` | Old key 401, new key 200, on loopback and on the tailnet address; `claude-local.ps1` answers on local-coder and local-coder-q6 |
+| Mac, before `setup-client.sh` | `claude-local.sh` fails with 401 (user) |
+| Mac, after `copy-router-key.ps1` and `setup-client.sh` | `claude-local.sh` works, `/model` lists Local Coder Q6 and it answers (user); one Keychain item for `local-ai/router-key`, account = the Mac user. `grep -c` on `security dump-keychain` prints 2 for one item (label and service both match), so the procedure uses a per-item check |
+
+The keys never left the PowerShell process that tested them: only status codes and hash prefixes were printed. Procedure in `docs/remote-client-macos.md` (Rotating the key).

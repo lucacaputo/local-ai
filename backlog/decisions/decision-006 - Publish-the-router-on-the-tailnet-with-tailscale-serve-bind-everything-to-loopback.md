@@ -4,7 +4,9 @@ title: >-
   Publish the router on the tailnet with tailscale serve, bind everything to
   loopback
 date: '2026-10-18 16:16'
-status: accepted
+status: >-
+  accepted; second-device check done in TASK-013 and LAN check in TASK-014 (see
+  doc-002)
 ---
 ## Context
 
