@@ -28,6 +28,7 @@ $old = @{ K = $env:LITELLM_MASTER_KEY; U = $env:PYTHONUTF8; T = $env:LITELLM_TEL
 try {
   $env:LITELLM_MASTER_KEY = Get-LocalAiRouterKey
   $env:LOCAL_AI_ALLOWED_LOGINS = (Get-AllowedLogins $Root) -join ','   # read by config\custom_auth.py
+  if (-not $env:LOCAL_AI_ALLOWED_LOGINS) { Write-Warning 'No allowed Tailscale logins (Tailscale signed out, no allowed-logins.txt): remote devices are refused until the stack is restarted; the key still works.' }
   $env:PYTHONUTF8 = '1'          # LiteLLM's banner crashes on cp1252 when output is redirected
   $env:LITELLM_TELEMETRY = 'False'
   Start-Detached $exe @('--config', (Join-Path $repo 'config\litellm.yaml'), '--host', $ListenHost, '--port', "$Port") `

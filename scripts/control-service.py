@@ -8,8 +8,8 @@ that prefix (TASK-022). Routes:
   GET  /status  router, llama-swap, loaded model, VRAM, running action
   POST /up      runs ai-up.ps1 (game guard included)
   POST /down    runs ai-down.ps1
-A request is let in only when tailscale serve forwarded it from a login on LOCAL_AI_ALLOWED_LOGINS (the
-router's allowlist, injected by scripts\\start-control.ps1) and it carries neither Origin nor
+A request is let in only when tailscale serve forwarded it from a login on the router's allowlist
+(Get-AllowedLogins in scripts\\lib\\stack.ps1, re-read on demand, see _allowed_logins) and it carries neither Origin nor
 Sec-Fetch-Site, which browsers send and command-line clients do not (TASK-031). One up/down runs at a
 time; a second one gets 409. Every request is logged to <root>\\logs\\control.log.
 
@@ -29,18 +29,44 @@ HOST, PORT = "127.0.0.1", 4100
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 ROOT = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LOCAL_AI_ROOT", r"D:\local-ai")
 LOG = os.path.join(ROOT, "logs", "control.log")
-ALLOWED = frozenset(x.strip().lower() for x in os.environ.get("LOCAL_AI_ALLOWED_LOGINS", "").split(",") if x.strip())
+ALLOWED_TTL, ALLOWED_RETRY = 60, 5   # seconds between re-reads of the allowlist: while it has logins / while empty
 MODEL_PORTS = {10001: "local-coder", 10002: "local-coder-q6"}   # llama-server ports from config\llama-swap.yaml
 
 _action_lock = threading.Lock()
 _running = None   # "up" / "down" while one runs
 _log_lock = threading.Lock()
+_allowed_lock = threading.Lock()
+_initial = frozenset(x.strip().lower() for x in os.environ.get("LOCAL_AI_ALLOWED_LOGINS", "").split(",") if x.strip())
+_allowed = {"logins": _initial, "at": time.monotonic() if _initial else float("-inf")}   # from scripts\start-control.ps1; empty: re-read at once
 
 
 def _log(login, method, path, code, outcome):
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {login or '-'} {method} {path} {code} {outcome}\n"
     with _log_lock, open(LOG, "a", encoding="utf-8") as f:
         f.write(line)
+
+
+def _allowed_logins():
+    """The router's allowlist: <root>\\allowed-logins.txt if it exists, else the login this PC is signed in to Tailscale
+    with (Get-AllowedLogins in scripts\\lib\\stack.ps1, the single place for this rule). Re-read every ALLOWED_TTL
+    seconds, and every ALLOWED_RETRY seconds while empty: at logon the service starts before Tailscale is signed in
+    (TASK-026), and a changed allowed-logins.txt applies without a restart."""
+    with _allowed_lock:
+        age = time.monotonic() - _allowed["at"]
+        if age < (ALLOWED_TTL if _allowed["logins"] else ALLOWED_RETRY):
+            return _allowed["logins"]
+        stack = os.path.join(SCRIPTS, "lib", "stack.ps1")
+        try:
+            out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                                  f". '{stack}'; (Get-AllowedLogins '{ROOT}') -join ','"],
+                                 capture_output=True, text=True, errors="replace", timeout=30).stdout
+            logins = frozenset(x.strip().lower() for x in out.strip().split(",") if x.strip())
+        except Exception:
+            logins = frozenset()
+        if logins != _allowed["logins"]:
+            _log("-", "ALLOWLIST", "-", "-", f"{len(logins)} allowed login(s)")
+        _allowed.update(logins=logins, at=time.monotonic())
+        return logins
 
 
 def _http_ok(url):
@@ -110,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
         """The allowlisted Tailscale login of a non-browser request, else None."""
         login = (self.headers.get("Tailscale-User-Login") or "").strip().lower()
         from_browser = "Origin" in self.headers or "Sec-Fetch-Site" in self.headers
-        return login if login and login in ALLOWED and not from_browser else None
+        return login if login and not from_browser and login in _allowed_logins() else None
 
     def _handle(self):
         global _running
@@ -125,7 +151,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True}, raw_login, "health")
         login = self._caller()
         if login is None:
-            return self._send(401, {"error": "not authorised: needs an allowlisted Tailscale login, not from a browser"}, raw_login, "refused")
+            hint = "" if _allowed_logins() else " (the PC has no allowed logins yet: is Tailscale signed in there?)"
+            return self._send(401, {"error": "not authorised: needs an allowlisted Tailscale login, not from a browser" + hint}, raw_login, "refused")
         if path == "/status":
             return self._send(200, _status(), login, "status")
         action = path.lstrip("/")
@@ -151,5 +178,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
-    _log("-", "START", "-", "-", f"listening on {HOST}:{PORT}, {len(ALLOWED)} allowed login(s)")
+    _log("-", "START", "-", "-", f"listening on {HOST}:{PORT}, {len(_allowed['logins'])} allowed login(s) at start")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

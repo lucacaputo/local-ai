@@ -106,6 +106,14 @@ if ($Uv -and (Test-Path $Uv)) {
   if ($uvVer -notmatch [regex]::Escape($v.Uv.Version)) { $warnings.Add("uv is '$uvVer'; pinned version is $($v.Uv.Version).") }
 }
 
+# control service (TASK-026): reported only; it is optional, so it is never installed or counted as missing here
+$ctlLine = if (Get-ScheduledTask -TaskName 'local-ai-control' -ErrorAction SilentlyContinue) { 'installed (starts at logon)' } else { 'not installed (optional: scripts\install-control.ps1)' }
+if (Get-NetTCPConnection -State Listen -LocalPort 4100 -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue) { $ctlLine += ', running' }
+if ($tsLine -eq 'installed') {
+  $web = try { ((Invoke-Native $Tailscale @('serve', 'status', '--json')).Output | ConvertFrom-Json).Web } catch { $null }
+  if ($web -and ($web.PSObject.Properties | Where-Object { $_.Value.Handlers.PSObject.Properties.Name -contains '/control' })) { $ctlLine += ', /control published' }
+}
+
 $rootDrive = Split-Path -Qualifier $Root
 if ($rootDrive -and (Test-Path "$rootDrive\")) {
   $freeGb = [math]::Round((Get-PSDrive ($rootDrive.TrimEnd(':'))).Free / 1GB)
@@ -121,6 +129,7 @@ if ($rootDrive -and (Test-Path "$rootDrive\")) {
 if ($gpuLine) { "  GPU        $gpuLine" }
 if ($tsLine)  { "  Tailscale  $tsLine" }
 if ($uvVer)   { "  uv         $uvVer" }
+if ($ctlLine) { "  control    $ctlLine" }
 foreach ($n in $needed) { "  [missing]  $n (would be installed with winget)" }
 foreach ($i in $installed) { "  [install]  $i installed with winget" }
 foreach ($w in $warnings) { "  warning: $w" }

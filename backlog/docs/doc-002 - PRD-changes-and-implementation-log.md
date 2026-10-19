@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 15:51'
+updated_date: '2026-10-19 21:47'
 ---
 # PRD changes and implementation log
 
@@ -222,3 +222,23 @@ Fix in `config/custom_auth.py`: a request that carries `Origin` or `Sec-Fetch-Si
 | Claude Code | Through the tailnet name with the marker: sonnet and local-coder answer; `claude-local.ps1` with the key answers |
 
 The control service (TASK-025) applies the same rule.
+
+## Control service started at logon (TASK-026)
+
+- `scripts/install-control.ps1` registers the scheduled task `local-ai-control` without elevation: triggered at logon of the user and repeated every 10 minutes for an indefinite duration. It runs `conhost.exe --headless powershell.exe … start-control.ps1`, so no console window opens. start-control.ps1 does nothing while the service runs, so the repetition only matters after a crash. The script also starts the service once and publishes `/control` on tailnet port 4000, which tailscale serve keeps across reboots. `-Uninstall` stops the service and removes the task and the route. Both are safe to run twice, and neither starts the AI stack.
+- It is a scheduled task rather than a Windows service because the service runs as the user: ai-up reads the router key from the user's Credential Manager. The PC must be on with the user logged in (Wake-on-LAN is out of scope).
+- **Logon race.** The task runs within seconds of logon, before Tailscale is signed in, so Get-AllowedLogins returned nothing and the service refused the Mac (the first logoff test got 401). The repetition cannot fix this, because the service is already running. `control-service.py` now re-reads the allowlist through Get-AllowedLogins on demand: every 60 s, every 5 s while it is empty, and on the first request if it started empty. A changed `allowed-logins.txt` also applies without a restart. A 401 says when the PC has no allowed logins. The router reads the list only once, at start; `start-litellm.ps1` now warns when that list is empty.
+- ACL unchanged: `/control` is a path on tailnet port 4000, already covered by the `autogroup:member → autogroup:self tcp:4000` grant.
+- `install.ps1 -CheckOnly` prints a `control` line (task registered, service running, `/control` published). It is a report only, never an install step.
+
+| Check | Result |
+|---|---|
+| Install twice, uninstall twice | Second install: service already running. Second uninstall: nothing to remove |
+| Scheduled task | Ready, logon trigger for the user, repetition PT10M indefinite. The service keeps running after the task ends and after Stop-ScheduledTask. No window |
+| Empty allowlist at start (simulated) | First request 200, ALLOWLIST logged. `allowed-logins.txt` without the login: 401 within 35 s. File removed: 200 within 65 s |
+| Logoff and logon, before the fix | Service up 3 s after logon with 0 allowed logins. Mac: 401 |
+| Logoff and logon, after the fix | Logon 23:36:17, service started 23:36:19 with 0 logins. First Mac request at 23:37:17 re-read the list (1 login): status 200, up 200 (Stack healthy in 14.3 s), down 200. The stack stayed down until up |
+| Repetition | Service killed at 23:39:28. The task run at 23:46:17 (10 minutes after logon) brought it back at 23:46:18 with 1 allowed login |
+| `install.ps1 -CheckOnly` | Shows "not installed" or "installed, running, /control published" |
+
+The repetition follows a 10-minute grid counted from logon, so a crashed service is back within 10 minutes.
