@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-10-19 12:11'
-updated_date: '2026-10-19 13:27'
+updated_date: '2026-10-19 13:51'
 labels: []
 dependencies: []
 references:
@@ -72,6 +72,8 @@ ts-demo with local-coder-q6: done in 61 s, 10 tool calls (one wrong-path Read), 
 Overflow: 16 parallel full Reads (about 128K tokens of results in one step) fail on both entries at 70% and 80% with a 400 ContextWindowExceededError (request ~177K tokens); Claude Code estimated 113,851 tokens before its compaction, so its estimate undercounts this test text by about 55%, and the LiteLLM 400 is not treated as prompt-too-long, so reactive compaction does not recover. The TASK-015 16-Read passes (ovf16B/C) had read one line per file (limit=1); its real passes were 8 full Reads. 8 parallel full Reads pass on both entries at 70%, 80% and 90%. Thresholds: local-coder 77,750 / 88,857 / 98,072 (90% is capped at the default), local-coder-q6 100,688 / 115,072 / 129,456. ai-up warns below 28,500 MiB free for the Q6 entry (tested with the threshold raised; silent at 30,655 MiB free).
 
 User decisions 2026-10-19: keep local-coder-q6, 160K, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=80 (set in config/claude-settings.json; all three entries answer with it, effectiveWindow unchanged). Criterion 2 condition resolved: Claude Code has modelSettings.<model>.autoCompactWindow, so local-coder stays at 128K (option 1 not needed). Criterion 8 evidence: effectiveWindow per entry inside its server context; near-full prompts at the server window (128,450 tokens on the Q4_K_M at 128K, 160,935 on the Q6_K at 160K) succeed; local-light shares the Q4_K_M server. decision-004: the backlog CLI (1.54.0) can only set a decision title and status, so instead of a new decision with an empty body, decision-004 status now says it is partly superseded by TASK-020 and doc-002 holds the record. Criterion 2 stays open until the user sees Local Coder Q6 in an interactive /model on the PC, and on the Mac after a pull.
+
+User check 2026-10-19: Local Coder Q6 is listed in /model on the PC (it did not answer because the stack was down at the time). The Mac check needs the pushed config and a git pull there.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
