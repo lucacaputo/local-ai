@@ -4,6 +4,7 @@ title: Start the control service at logon
 status: To Do
 assignee: []
 created_date: '2026-10-19 14:31'
+updated_date: '2026-10-19 14:46'
 labels: []
 milestone: m-3
 dependencies:
@@ -24,6 +25,6 @@ The control service must already be running when the user is away. It runs as th
 <!-- AC:BEGIN -->
 - [ ] #1 An install script registers the control service to start at logon and publishes its port on the tailnet; an uninstall script removes both; running either twice is safe
 - [ ] #2 After the user logs off and on again, the service answers status from the Mac while the AI stack stays down until up is called
-- [ ] #3 The Tailscale ACL grant covers the control port for the user own devices only, applied by the user in the admin console, and recorded
+- [ ] #3 The control service is reachable from the Mac through the existing tcp:4000 ACL grant (one port, /control route, TASK-022), so no ACL change is needed; checked and recorded
 - [ ] #4 install.ps1 -CheckOnly or the README tells whether the control service is installed
 <!-- AC:END -->

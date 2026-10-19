@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 14:17'
+updated_date: '2026-10-19 14:44'
 ---
 # PRD changes and implementation log
 
@@ -166,3 +166,28 @@ Remaining risk: one step whose tool results exceed the window (for example 16 pa
 | Mac, after `copy-router-key.ps1` and `setup-client.sh` | `claude-local.sh` works, `/model` lists Local Coder Q6 and it answers (user); one Keychain item for `local-ai/router-key`, account = the Mac user. `grep -c` on `security dump-keychain` prints 2 for one item (label and service both match), so the procedure uses a per-item check |
 
 The keys never left the PowerShell process that tested them: only status codes and hash prefixes were printed. Procedure in `docs/remote-client-macos.md` (Rotating the key).
+
+## Tailscale serve in HTTP mode with identity headers (TASK-022, m-3 spike)
+
+Tested with Tailscale 1.104.1 on the PC (node not tagged) and the Mac, using a header-echo listener on 127.0.0.1:4090 behind `tailscale serve --http 4000` (tailnet port 4000, the only one the ACL grant opens), then the real router behind the same mode.
+
+| Check | Result |
+|---|---|
+| Identity from the Mac | `Tailscale-User-Login` = <user login>, `Tailscale-User-Name`, `Tailscale-User-Profile-Pic`, `Tailscale-Headers-Info`, `X-Forwarded-For` = the Mac tailnet IP, `X-Forwarded-Host`. The request reaches the listener from 127.0.0.1 |
+| Identity from the PC through its own tailnet name | The same login: identity is per user, not per device; `X-Forwarded-For` (the device tailnet IP) is what tells devices apart |
+| Loopback request on the PC | No identity headers |
+| Forged headers (from the Mac and from the PC) | `Tailscale-User-Login: evil@example.com` arrives as the real login; a forged `Tailscale-App-Capabilities` is dropped |
+| Addressing | HTTP mode routes by host name (`http://caps:4000`, `http://caps.tail0144cb.ts.net:4000`); a request to the tailnet IP gets 404 from tailscaled |
+| Path routes | `--set-path /echo` forwards `/echo/sub/path?x=1` as `/sub/path?x=1`; `/` to the router and `/echo` to the listener worked side by side on one port |
+| Backend down | A route whose target does not listen answers 502 Bad Gateway at once |
+| Claude Code through HTTP mode | From the Mac (user) and the PC: local-coder and sonnet answer; streaming deltas arrive the same way as over loopback (sonnet 85 vs 86 deltas over about 3 s, local-coder 716 vs 668 over about 9.5 s). Sonnet looks like it prints at once because it finishes in about 3 s |
+| HTTPS | Not enabled on the tailnet (`CertDomains` empty) |
+
+Decisions for m-3:
+- **HTTP, not HTTPS.** Tailnet traffic is already encrypted by WireGuard; HTTPS would need HTTPS certificates enabled in the admin console and would publish the machine name in public certificate-transparency logs; identity headers and Claude Code work over HTTP.
+- **Clients use the MagicDNS name**, `http://caps.tail0144cb.ts.net:4000`, not the tailnet IP (404 in HTTP mode). The Mac URL changes in TASK-024.
+- **One tailnet port, path routes:** `/` to the router (127.0.0.1:4000) and `/control` to the control service (TASK-025). The ACL grant (tcp:4000) stays as it is. The `/control` route has to exist while the stack is down, so it is set up with the control service (TASK-026); `ai-up` and `ai-down` add and remove only the `/` route (with the router route gone, the tailnet answers 404 for `/`).
+- **The allowlist holds the user login (an email address)**, so it lives outside the repo (TASK-023).
+- Accepted (user, 2026-10-19): programs on the PC can reach the loopback port and set identity headers themselves.
+
+Go: m-3 can build on identity headers.
