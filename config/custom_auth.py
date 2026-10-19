@@ -8,7 +8,12 @@ and set the identity header themselves; the user accepted that (TASK-022).
 
 Clients that come in by identity still send x-litellm-api-key, with the fixed non-secret value
 "tailscale-identity": LiteLLM forwards the Claude subscription token (Authorization) to Anthropic
-only when that header is present, whatever its value. The value itself never lets a request in."""
+only when that header is present, whatever its value. The value itself never lets a request in.
+
+tailscale serve also attaches the identity to requests made by web pages in the user's browser, and
+LiteLLM answers cross-origin requests with Access-Control-Allow-Origin: *. Browsers send Origin (and
+Sec-Fetch-Site) on such requests and Claude Code sends neither, so a request carrying either one is
+not let in by identity, only by the key (TASK-031)."""
 import hmac
 import os
 
@@ -28,7 +33,8 @@ def _bearer(value: str) -> str:
 
 async def user_api_key_auth(request: Request, api_key: str) -> UserAPIKeyAuth:
     login = request.headers.get("tailscale-user-login", "").strip().lower()
-    if login and login in _ALLOWED_LOGINS:
+    from_browser = "origin" in request.headers or "sec-fetch-site" in request.headers
+    if login and login in _ALLOWED_LOGINS and not from_browser:
         return UserAPIKeyAuth(api_key="tailscale-identity", user_id=login, user_role=LitellmUserRoles.PROXY_ADMIN)
     master = os.environ.get("LITELLM_MASTER_KEY", "")
     candidates = [request.headers.get("x-litellm-api-key", ""), api_key or ""]

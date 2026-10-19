@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 15:02'
+updated_date: '2026-10-19 15:51'
 ---
 # PRD changes and implementation log
 
@@ -208,3 +208,17 @@ Go: m-3 can build on identity headers.
 | ai-up / ai-down | TCP forward replaced by the HTTP route; second ai-up starts nothing; ai-down keeps a `/control` route, also after a killed router |
 
 Effect on clients: in HTTP mode the tailnet IP gets 404, so the Mac must use the MagicDNS name from now on (TASK-024 changes its setup).
+
+## Browser requests refused on the identity path (TASK-031)
+
+Gap left by TASK-023: tailscale serve attaches the user identity to every request from the device, also to requests made by a web page in the browser, and LiteLLM answers cross-origin requests permissively. Measured through the tailnet name with `Origin: https://evil.example`: CORS preflight 200 with `Access-Control-Allow-Origin: *`, `GET /v1/models` 200 and a `local-coder` chat 200, readable by the page. A malicious page that guessed the address (`http://caps:4000`) could have used the local models with admin rights on the router; Claude models were out of reach (the page has no subscription token).
+
+Fix in `config/custom_auth.py`: a request that carries `Origin` or `Sec-Fetch-Site` (sent by browsers, never by Claude Code) is not let in by identity, only by the key.
+
+| Check | Result |
+|---|---|
+| Unit test | 16/16, including identity + Origin, identity + Sec-Fetch-Site, identity + marker + Origin (all 401), Origin + key (allowed) |
+| Through the tailnet name with the identity | Origin: GET /v1/models 401, POST to local-coder 401; Sec-Fetch-Site only 401; marker + Origin 401; Origin + key 200; no browser headers 200. The preflight still answers 200 (LiteLLM CORS middleware runs before auth), the request behind it is refused |
+| Claude Code | Through the tailnet name with the marker: sonnet and local-coder answer; `claude-local.ps1` with the key answers |
+
+The control service (TASK-025) applies the same rule.
