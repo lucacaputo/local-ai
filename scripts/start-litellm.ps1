@@ -9,6 +9,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\secrets.ps1"
+. "$PSScriptRoot\lib\stack.ps1"
 
 # The router stays on loopback; tailnet access is published by `tailscale serve` (decision-006).
 if ($ListenHost -notin @('127.0.0.1', '::1', 'localhost')) { throw "Refusing to bind the router to '$ListenHost': loopback only (see decision-006)." }
@@ -28,14 +29,13 @@ try {
   $env:LITELLM_MASTER_KEY = Get-LocalAiRouterKey
   $env:PYTHONUTF8 = '1'          # LiteLLM's banner crashes on cp1252 when output is redirected
   $env:LITELLM_TELEMETRY = 'False'
-  $p = Start-Process $exe -ArgumentList '--config', (Join-Path $repo 'config\litellm.yaml'), '--host', $ListenHost, '--port', $Port `
-    -RedirectStandardOutput (Join-Path $logs 'litellm.out.log') -RedirectStandardError (Join-Path $logs 'litellm.err.log') `
-    -WindowStyle Hidden -PassThru
+  Start-Detached $exe @('--config', (Join-Path $repo 'config\litellm.yaml'), '--host', $ListenHost, '--port', "$Port") `
+    (Join-Path $logs 'litellm.out.log') (Join-Path $logs 'litellm.err.log') | Out-Null
 } finally {
   $env:LITELLM_MASTER_KEY = $old.K; $env:PYTHONUTF8 = $old.U; $env:LITELLM_TELEMETRY = $old.T
 }
 for ($i = 0; $i -lt 60; $i++) {
   Start-Sleep 2
-  try { Invoke-WebRequest "http://${ListenHost}:$Port/health/liveliness" -UseBasicParsing -TimeoutSec 2 | Out-Null; "LiteLLM up on ${ListenHost}:$Port (pid $($p.Id))"; return } catch {}
+  try { Invoke-WebRequest "http://${ListenHost}:$Port/health/liveliness" -UseBasicParsing -TimeoutSec 2 | Out-Null; "LiteLLM up on ${ListenHost}:$Port (pid $((Get-Listener $Port $ListenHost).Pid))"; return } catch {}
 }
 throw "LiteLLM did not become healthy; see $logs\litellm.err.log"

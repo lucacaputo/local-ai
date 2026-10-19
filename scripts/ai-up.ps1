@@ -57,8 +57,8 @@ $baseline = Get-VramUsedMiB
 New-Item -ItemType Directory -Force (Join-Path $root 'logs'), (Join-Path $root 'run') | Out-Null
 $env:LOCAL_AI_ROOT = $root
 try {
-  $swap = Start-Process $swapExe -ArgumentList '-config', (Join-Path $repo 'config\llama-swap.yaml'), '-listen', '127.0.0.1:8080' `
-    -RedirectStandardOutput (Join-Path $root 'logs\llama-swap.out.log') -RedirectStandardError (Join-Path $root 'logs\llama-swap.err.log') -WindowStyle Hidden -PassThru
+  Start-Detached $swapExe @('-config', (Join-Path $repo 'config\llama-swap.yaml'), '-listen', '127.0.0.1:8080') `
+    (Join-Path $root 'logs\llama-swap.out.log') (Join-Path $root 'logs\llama-swap.err.log') | Out-Null
   for ($i = 0; $i -lt 60 -and -not (Test-Http "$swapUrl/health"); $i++) { Start-Sleep 1 }
   if (-not (Test-Http "$swapUrl/health")) { throw "llama-swap did not become healthy; see $root\logs\llama-swap.err.log" }
   & "$PSScriptRoot\start-litellm.ps1" -Root $root | Out-Null
@@ -88,6 +88,6 @@ if ($Warm) {
   "Model loaded in $([math]::Round($w.Elapsed.TotalSeconds, 1)) s."
 }
 
-@{ startedAt = (Get-Date).ToString('o'); vramBaselineMiB = $baseline; llamaSwapPid = $swap.Id } | ConvertTo-Json | Set-Content (Get-StateFile $root)
+@{ startedAt = (Get-Date).ToString('o'); vramBaselineMiB = $baseline; llamaSwapPid = (Get-Listener 8080).Pid } | ConvertTo-Json | Set-Content (Get-StateFile $root)
 "Stack healthy in $([math]::Round($clock.Elapsed.TotalSeconds, 1)) s: llama-swap $swapUrl, router $routerUrl$(if ($tailnet) { ", $tailnet" }). The model loads on the first request$(if ($Warm) { ' (already loaded)' })."
 "Use: scripts\claude-local.ps1   Stop: scripts\ai-down.ps1"

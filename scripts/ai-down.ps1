@@ -7,7 +7,11 @@ $clock = [Diagnostics.Stopwatch]::StartNew()
 $root = Get-AiRoot
 $stateFile = Get-StateFile $root
 $before = Get-VramUsedMiB
-$baseline = if (Test-Path $stateFile) { [int](Get-Content $stateFile -Raw | ConvertFrom-Json).vramBaselineMiB } else { $null }
+$baseline = $null
+if (Test-Path $stateFile) {
+  # a state file cut short by a crash must not stop the cleanup: fall back to the fixed idle target
+  try { $baseline = [int](Get-Content $stateFile -Raw | ConvertFrom-Json).vramBaselineMiB } catch { Write-Warning "Ignoring unreadable $stateFile." }
+}
 $stopped = @()
 
 # tailnet publishing first, so nothing forwards to a dying router

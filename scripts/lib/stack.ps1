@@ -8,6 +8,16 @@ function Invoke-Quiet([string]$Exe, [string[]]$Arguments) {
   try { (& $Exe @Arguments 2>&1 | ForEach-Object { "$_" }) -join "`n" } finally { $ErrorActionPreference = $old }
 }
 
+# Starts a hidden background process with stdout/stderr going to log files. Start-Process with
+# -RedirectStandardOutput makes the child inherit the caller's own output pipe, so a caller that waits for
+# that pipe to close (powershell.exe run from WSL, or any pipeline capturing the output) hangs for as long as
+# the child lives. Going through cmd.exe, which Start-Process starts without handle inheritance, avoids that.
+# The process returned is the cmd.exe wrapper; it ends when the child ends.
+function Start-Detached([string]$Exe, [string[]]$Arguments, [string]$OutLog, [string]$ErrLog) {
+  $line = ((@($Exe) + $Arguments | ForEach-Object { "`"$_`"" }) -join ' ') + " >`"$OutLog`" 2>`"$ErrLog`""
+  Start-Process cmd.exe -ArgumentList "/c `"$line`"" -WindowStyle Hidden -PassThru
+}
+
 function Get-VramUsedMiB { [int]((Invoke-Quiet 'nvidia-smi' @('--query-gpu=memory.used', '--format=csv,noheader,nounits')) -split "`n")[0] }
 function Get-VramFreeMiB { [int]((Invoke-Quiet 'nvidia-smi' @('--query-gpu=memory.free', '--format=csv,noheader,nounits')) -split "`n")[0] }
 

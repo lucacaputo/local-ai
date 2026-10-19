@@ -50,7 +50,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-up.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-down.ps1
 ```
 
-This form was run for `install.ps1 -CheckOnly`; `ai-up` and `ai-down` are meant to be started the same way but were not run from WSL for this README.
+`ai-up` and `ai-down` were run this way: `ai-up` returns in about 20 s once the stack is healthy. (Earlier versions of `ai-up` never returned to a WSL caller, because the background processes inherited its output pipe; `Start-Detached` in `scripts/lib/stack.ps1` fixes that, TASK-016.) `claude-local.ps1` was not run from WSL.
 
 `scripts\claude-local.ps1` sets `ANTHROPIC_BASE_URL` and the router key header for that one Claude Code process, and passes `config/claude-settings.json` (picker rows, 128K window, per-Read cap, earlier compaction). It does not set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`: either would replace the subscription login and switch Claude requests to per-token billing. Use `$env:LOCAL_AI_ROUTER` to point it at another router URL.
 
