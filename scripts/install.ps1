@@ -109,8 +109,10 @@ if ($Uv -and (Test-Path $Uv)) {
 $rootDrive = Split-Path -Qualifier $Root
 if ($rootDrive -and (Test-Path "$rootDrive\")) {
   $freeGb = [math]::Round((Get-PSDrive ($rootDrive.TrimEnd(':'))).Free / 1GB)
-  $needGb = if ($SkipModel) { 3 } else { 25 }
-  if ($freeGb -lt $needGb -and -not (Test-Path (Join-Path $Root "models\$($v.Model.File)"))) {
+  $missingModels = @($v.Models | Where-Object { -not (Test-Path (Join-Path $Root "models\$($_.File)")) })
+  $modelGb = [math]::Ceiling((($missingModels | ForEach-Object { $_.Size } | Measure-Object -Sum).Sum) / 1GB)
+  $needGb = if ($SkipModel) { 3 } else { 3 + $modelGb }
+  if ($freeGb -lt $needGb -and $missingModels.Count) {
     $problems.Add("Only $freeGb GB free on $rootDrive; need about $needGb GB for -Root '$Root'.")
   }
 } else { $problems.Add("Drive for -Root '$Root' does not exist.") }
@@ -186,19 +188,18 @@ Step "LiteLLM $($v.LiteLlm.Version) in $($v.LiteLlm.VenvDir) (Python $($v.LiteLl
   if ($r.Code -ne 0) { throw "uv pip install failed: $($r.Output)" }
 }
 
-$modelPath = Join-Path $Root "models\$($v.Model.File)"
-if ($SkipModel) {
-  "  [skipped]  model $($v.Model.File) (-SkipModel)"
-} else {
-  Step "model $($v.Model.File) ($([math]::Round($v.Model.Size / 1GB, 1)) GiB)" {
-    (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -eq $v.Model.Size)
+foreach ($m in $v.Models) {
+  if ($SkipModel) { "  [skipped]  model $($m.File) (-SkipModel)"; continue }
+  $modelPath = Join-Path $Root "models\$($m.File)"
+  Step "model $($m.File) for $($m.Name) ($([math]::Round($m.Size / 1GB, 1)) GiB)" {
+    (Test-Path $modelPath) -and ((Get-Item $modelPath).Length -eq $m.Size)
   } {
     New-Item -ItemType Directory -Force (Split-Path $modelPath) | Out-Null
     $part = "$modelPath.part"
-    $r = Invoke-Native 'curl.exe' @('-fL', '--retry', '3', '-sS', '-C', '-', '-o', $part, $v.Model.Url)
+    $r = Invoke-Native 'curl.exe' @('-fL', '--retry', '3', '-sS', '-C', '-', '-o', $part, $m.Url)
     if ($r.Code -ne 0) { throw "Model download failed: $($r.Output)" }
     $got = (Get-FileHash $part -Algorithm SHA256).Hash.ToLower()
-    if ($got -ne $v.Model.Sha256) { Remove-Item $part -Force; throw "Model SHA-256 mismatch (expected $($v.Model.Sha256), got $got)" }
+    if ($got -ne $m.Sha256) { Remove-Item $part -Force; throw "Model SHA-256 mismatch for $($m.File) (expected $($m.Sha256), got $got)" }
     Move-Item $part $modelPath -Force
   }
 }

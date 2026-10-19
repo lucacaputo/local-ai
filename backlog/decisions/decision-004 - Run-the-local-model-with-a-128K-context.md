@@ -2,7 +2,9 @@
 id: decision-004
 title: Run the local model with a 128K context
 date: '2026-10-18 15:50'
-status: accepted
+status: >-
+  accepted; partly superseded by TASK-020 (local-coder-q6 at 160K, per-model
+  compaction windows, see doc-002)
 ---
 ## Context
 

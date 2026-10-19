@@ -23,12 +23,23 @@
   LiteLlm = @{ Version = '1.106.0'; Python = '3.12'; VenvDir = 'litellm-venv' }
   Uv      = @{ Version = '0.13.1'; WingetId = 'astral-sh.uv' }
   Tailscale = @{ Version = '1.104.1'; WingetId = 'Tailscale.Tailscale' }
-  Model   = @{
-    File   = 'Qwen3.6-27B-Q4_K_M.gguf'
-    Url    = 'https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q4_K_M.gguf'
-    Size   = 16817244384
-    Sha256 = '5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0'
-  }
+  # One entry per model file; Name is the llama-swap / LiteLLM model that serves it (config\llama-swap.yaml).
+  Models  = @(
+    @{
+      Name   = 'local-coder'   # also serves local-light (alias)
+      File   = 'Qwen3.6-27B-Q4_K_M.gguf'
+      Url    = 'https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q4_K_M.gguf'
+      Size   = 16817244384
+      Sha256 = '5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0'
+    }
+    @{
+      Name   = 'local-coder-q6'
+      File   = 'Qwen3.6-27B-Q6_K.gguf'
+      Url    = 'https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q6_K.gguf'
+      Size   = 22523238624
+      Sha256 = 'ec1805fe87e6519c461c1ed2d179865464a875ed241032ead65a354f979cfe14'
+    }
+  )
   MinCudaVersion = '12.8'
   MinComputeCapability = '12.0'   # Blackwell (sm_120)
 }

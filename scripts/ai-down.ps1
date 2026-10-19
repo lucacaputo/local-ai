@@ -34,6 +34,7 @@ function Stop-StackListener([int]$Port, [string]$Label, [int]$GraceSec = 0) {
 Stop-StackListener 4000 'router'
 Stop-StackListener 8080 'llama-swap'
 Stop-StackListener 10001 'llama-server' -GraceSec 5
+Stop-StackListener 10002 'llama-server (q6)' -GraceSec 5
 # launcher shims and strays from our install folder
 Get-Process litellm, llama-swap, llama-server -ErrorAction SilentlyContinue |
   Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |

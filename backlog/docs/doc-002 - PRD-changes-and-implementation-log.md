@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 11:59'
+updated_date: '2026-10-19 13:26'
 ---
 # PRD changes and implementation log
 
@@ -13,7 +13,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 
 | PRD | What changed | Why | Recorded in |
 |---|---|---|---|
-| Local context 64K (section 6, O4) | 128K: llama-server `-c 131072`, Claude Code told `CLAUDE_CODE_MAX_CONTEXT_TOKENS=131072` | At 64K Claude Code compacts at ~36K tokens and thrashed; 128K measured at 56 tok/s with a 94K prompt, 23.6 GB VRAM | decision-004, TASK-004 |
+| Local context 64K (section 6, O4) | 128K for `local-coder` and `local-light`: llama-server `-c 131072`, and Claude Code compacts within it through `modelSettings.<model>.autoCompactWindow=131072`. `local-coder-q6` has 160K (`-c 163840`); `CLAUDE_CODE_MAX_CONTEXT_TOKENS=163840`, one value for every local model, matches the largest server (TASK-020) | At 64K Claude Code compacts at ~36K tokens and thrashed; 128K measured at 56 tok/s with a 94K prompt, 23.6 GB VRAM | decision-004, TASK-004, TASK-020 |
 | LiteLLM binds the Tailscale address and loopback (R5, section 4) | LiteLLM, llama-swap and llama-server bind to 127.0.0.1 only; `tailscale serve` publishes port 4000 on the tailnet | uvicorn takes one bind address; this leaves nothing on the LAN by construction | decision-006, TASK-007 |
 | Windows Firewall rule scoped to the Tailscale interface (R5) | No extra rule: the Tailscale installer's `Tailscale-In` rules already limit inbound to the Tailscale addresses | Nothing else listens on a non-loopback address | decision-006, TASK-007 |
 | Router master key and a separate client local key (F6, R1) | One key serves as master and client key | Separate client keys need LiteLLM virtual keys, which need a database | decision-005, TASK-006 |
@@ -25,8 +25,9 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | Phase 3 bake-off (sections 6, 9; R4 gate; O1-O3) | Skipped. Qwen3.6 27B Q4_K_M stays `local-coder`, `local-light` stays an alias, Claude Code stays the harness (no OpenCode trial) | User decision 2026-10-18: community consensus already favours Qwen, and Claude Code is the harness the user works in; the benchmark would cost time and tokens for no change in choice | m-1 plan |
 | Router key failures (hardening carry-over) | `config/custom_auth.py` (LiteLLM `custom_auth`) compares the `x-litellm-api-key` or `Authorization` bearer with the master key in constant time and answers 401 otherwise. Before: no key gave HTTP 500 (the auth error handler imports the `prisma` package, absent without a database) and a wrong key gave 400 ("No connected db") | Both were opaque for remote clients with a misconfigured key. Installing `prisma` fixed only the no-key case; the hook fixes both with no new dependency. Verified: none, wrong, wrong-suffix keys give 401; the right key (either header) gives 200; `/health/liveliness` stays open; `local-coder` and `sonnet` answer through `claude-local` | TASK-011 |
 | Tailscale ACL (R5, "Tailscale ACL limits access to the user's own devices") | Admin-console policy: one grant `{"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["tcp:4000"]}`; the default allow-all grant is removed, the default `ssh` check rule (own devices) is kept | Only the user's own devices can reach port 4000 on the PC, and nothing else on the PC over the tailnet. Applied by the user in the admin console (no API token in this setup) | TASK-013 |
-| Context overflow from parallel tool results (hardening carry-over) | `config/claude-settings.json` env adds `CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS=8000` (cap per Read) and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70` (compact earlier). Both PC and Mac use this file | Reproduced with 8 and 16 parallel Reads of ~80 KB files in `claude -p`: with no settings, 8 reads end the turn with `Prompt is too long, automatic compaction failed: summarization produced empty response` (compaction has to send the same oversized conversation); cap only: 8 reads pass, 16 reads end with the 400 `ContextWindowExceededError`; cap plus 70%: 16 reads pass (also with the values coming only from the settings file). Trade-off: files over ~8K tokens are returned truncated and need offset/limit reads, and compaction now starts at about 92K tokens, which in an interactive session (about 67K of system prompt) leaves little room before it; 70 is the only value tested | TASK-015 |
+| Context overflow from parallel tool results (hardening carry-over) | `config/claude-settings.json` env sets `CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS=8000` (cap per Read) and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=80` (70 in TASK-015, raised in TASK-020). Both PC and Mac use this file | TASK-015: with no settings, 8 parallel full Reads of ~80 KB files ended the turn with `Prompt is too long, automatic compaction failed: summarization produced empty response`; with the cap, 8 full Reads pass. **Corrected in TASK-020:** the TASK-015 16-Read passes at 70% (`ovf16B`, `ovf16C`) read one line per file (`limit=1`). With full reads, 16 Reads (about 128K tokens of results in one step) end with the 400 `ContextWindowExceededError` on both local entries at 70% and 80%, while 8 full Reads pass at 70, 80 and 90%. The percentage applies to the effective window (window minus 20K) and can only lower Claude Code's default threshold (effective window minus 13K): 70% compacted local-coder at 77,750 tokens, not the ~92K recorded here before; 80% compacts at about 88.9K (local-coder) and 115.1K (local-coder-q6). Files over ~8K tokens come back truncated and need offset/limit reads | TASK-015, TASK-020 |
 | `ai-up`/`ai-down` failure handling (hardening carry-over) | `ai-up` starts llama-swap and the router through `Start-Detached` (`scripts/lib/stack.ps1`: `cmd.exe /c "exe args >out 2>err"`) instead of `Start-Process -RedirectStandardOutput/-Error`; `ai-down` ignores an unreadable `run\stack.json` (warning) instead of aborting | With `Start-Process` redirects the child inherits the caller's output pipe, so `powershell.exe scripts/ai-up.ps1` run from WSL (or any caller that waits for the pipe to close) did not return until the stack was stopped. A corrupt `stack.json` made `ai-down` fail before stopping anything and kept failing | TASK-016 |
+| Model choice (section 6, O2) | Qwen3.6 27B Q6_K added as `local-coder-q6` (160K window) next to the Q4_K_M `local-coder`, not instead of it | User decision 2026-10-19: try the higher quant without giving up the current one. Measured 15-20% slower generation, 27.7 GB held by llama-server at 160K, no system-memory fallback | TASK-020 |
 | LiteLLM to local server over `/v1/messages` (R3, F3) | LiteLLM's `openai/` provider, which calls llama-swap's `/v1/responses` | The `anthropic/` provider type would forward the client OAuth token to the local server | TASK-003 |
 
 ## Spike and open-point status
@@ -37,9 +38,9 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | S2 (`/model` list, window, compaction) | Pass with 128K (TASK-004); `modelPicker` rows, discovery not needed |
 | S3 (Blackwell, N1) | Pass: 65/65 layers on GPU, 63-77 tok/s (TASK-002) |
 | S4 (multi-step tool use) | Pass directly and via the router; tool-call error rate not yet within the R4 gate, see below (TASK-002, TASK-003) |
-| O4 context size | Resolved: 128K |
-| O1 alternative harness, O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Claude Code, Qwen3.6 27B, alias. Reopen only if tool-call failures become a daily problem |
-| O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS` |
+| O4 context size | Resolved: 128K for the Q4_K_M entries, 160K for `local-coder-q6` (TASK-020) |
+| O1 alternative harness, O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Claude Code, Qwen3.6 27B, alias. The Q6_K quant of the same model was added as `local-coder-q6` (TASK-020). Reopen only if tool-call failures become a daily problem |
+| O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and per-model `modelSettings.<model>.autoCompactWindow` when local models have different windows (TASK-020) |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
 | O8 game guard, power limit | Resolved: guard yes, power limit no (decision-007) |
 | O10 pins | Resolved: verified on the real stack in the MVP acceptance run (below); source of truth is `scripts/versions.psd1` |
@@ -57,6 +58,7 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | llama-swap | v265 (d1e743f) |
 | LiteLLM | 1.106.0 (Python 3.12, uv 0.13.1) |
 | Model | Qwen3.6-27B-Q4_K_M.gguf (unsloth), SHA-256 in `scripts/versions.psd1` |
+| Model, added in TASK-020 | Qwen3.6-27B-Q6_K.gguf (unsloth, 22,523,238,624 bytes), SHA-256 in `scripts/versions.psd1` |
 | Tailscale | 1.104.1 |
 | Claude Code | 2.1.302 (client, not pinned by the scripts) |
 | NVIDIA driver | 617.42 (RTX 5090, CUDA 13.x runtime bundled) |
@@ -104,3 +106,29 @@ Run from WSL with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scrip
 The launch hang, measured. `ai-up` from WSL printed "Stack healthy in 28.6 s" but `powershell.exe` returned only when a 200 s timeout killed it (exit 124). A 20 s `ping` started with `Start-Process -RedirectStandardOutput/-Error ... -WindowStyle Hidden` kept the caller waiting 20 s, also with `-RedirectStandardInput`; started through `cmd.exe /c "ping ... >o 2>e"` the caller returned in 0 s. After the change `ai-up -Warm` from WSL returns in 22 s with exit 0, the stored key still reaches the router (authenticated `/v1/models` and the warm-up chat both pass), logs are still written, and `stack.json` records the real llama-swap pid (the process returned by `Start-Detached` is the `cmd.exe` wrapper).
 
 Not tested: interrupting `ai-up` itself part-way (Ctrl-C); `ai-down` racing a running `ai-up`; a real game process (the guard was exercised with stand-ins in TASK-009); `ai-up` started from a Windows terminal after the change (only the `powershell.exe`-from-WSL path was run, which is the same code). The `ai-down` "Stopped:" line can list one llama-server pid twice (listener stop plus the sweep); cosmetic.
+
+## Q6_K entry, windows and compaction (TASK-020)
+
+`local-coder-q6` serves Qwen3.6-27B-Q6_K.gguf through llama-swap and LiteLLM with the same flags as `local-coder` and a 160K window; `local-coder` and `local-light` keep the Q4_K_M at 128K. Measured directly against a bench llama-swap (same flags, every prompt starting with a fresh GUID so the prompt cache cannot help), desktop idle at about 1.55 GB:
+
+| Setup | VRAM in use, model loaded | Generation: short / ~94K prompt / near-full prompt | Prompt processing: ~94K / near-full | Near-full prompt |
+|---|---|---|---|---|
+| Q4_K_M, 128K | 22,928 MiB (llama-server 21,354) | 76.9 / 56.8 / 51.0 tok/s | 2,385 / 1,976 tok/s | 128,450 tokens, 71 s |
+| Q6_K, 128K | 27,964 MiB (26,482) | 61.6 / 47.8 / 44.2 tok/s | 2,184 / 1,831 tok/s | 128,453 tokens, 79 s |
+| **Q6_K, 160K (chosen)** | 29,261 MiB (27,730) | 61.9 / 48.1 / 41.0 tok/s | 2,149 / 1,594 tok/s | 160,935 tokens, 108 s |
+| Q6_K, 192K | 30,520 MiB (28,980) | 61.8 / 48.1 / 37.9 tok/s | 2,163 / 1,441 tok/s | 193,950 tokens, 142 s |
+
+No system-memory fallback at any window: speed at ~94K is the same for every window, and the GPU shared memory of llama-server only grows by 32 MiB per 32K step (pinned buffers). The user kept the entry, with 160K and 80% compaction (2026-10-19). 160K was chosen over 192K: at 192K about 1.7 GB is left for the desktop and generation at a full prompt drops below 40 tok/s (N1). The Q6_K loads in 18 s (27 s on a cold disk cache).
+
+| Check | Result |
+|---|---|
+| Install | `install.ps1` downloads and hash-verifies both models from the model list in `scripts/versions.psd1` (Q6_K: 1,021 s); `-CheckOnly` lists both |
+| Claude Code windows | Debug log `effectiveWindow`: local-coder 111,072 and local-light 111,072 (128K minus the 20K output reserve), local-coder-q6 143,840 (160K minus 20K). Without the `modelSettings` entry, local-light followed the 160K global window |
+| Switching through the router | local-coder -> local-coder-q6 13.1 s, back 11.5-12.1 s, local-light after local-coder 0.3 s (same process). In 185 samples at 0.5 s there was never more than one llama-server and VRAM went back to idle before each load; peak 29,281 MiB |
+| Ports | llama-swap gives each model its own llama-server port in config order: 10001 local-coder, 10002 local-coder-q6 (inside the 10001-10010 range scanned in TASK-014, loopback only). `ai-up` pre-check and `ai-down` now cover 10002 (tested with the Q6_K loaded, and with a foreign listener on 10002) |
+| Multi-step edit | TASK-013 ts-demo task on local-coder-q6: done in 61 s, 10 tool calls (one wrong-path first Read), correct edits, `npm test` 5/5 |
+| Overflow, 8 parallel full Reads | Pass on both entries at 70, 80 and 90%. 80% chosen (user, 2026-10-19): working room after an interactive session start of ~67K grows from ~10K to ~22K (local-coder) and to ~48K (local-coder-q6) |
+| Overflow, 16 parallel full Reads | Fail on both entries at 70% and 80% (request about 177K tokens). Claude Code estimated 113,851 tokens before compacting, so it undercounts this synthetic text by about 55%, and the LiteLLM 400 is not taken as prompt-too-long, so reactive compaction does not recover |
+| ai-up guard | Refuses below 22,000 MiB free as before; warns below 28,500 MiB that local-coder-q6 will not fit (tested with the threshold raised; silent at 30,655 MiB free) |
+
+Not tested: the `/model` picker row in an interactive session on the PC and on the Mac (the Mac needs the new `config/claude-settings.json`); tool-call reliability of the Q6_K beyond one ts-demo run; the speed cost of the larger quant in a long real session.

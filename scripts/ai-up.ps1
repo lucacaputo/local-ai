@@ -11,6 +11,7 @@ param(
   [switch]$NoTailnet,
   [switch]$Force,
   [int]$MinFreeVramMiB = 22000,                 # model + 128K KV cache need about 21.6 GB (decision-004)
+  [int]$Q6MinFreeVramMiB = 28500,               # local-coder-q6 at 160K holds 27.7 GB (TASK-020): warn below this
   [string]$GamePathPattern                      # override of the game-detection pattern (for tests)
 )
 $ErrorActionPreference = 'Stop'
@@ -24,7 +25,7 @@ $swapUrl = 'http://127.0.0.1:8080'
 $routerUrl = 'http://127.0.0.1:4000'
 
 # 1. installed?
-foreach ($need in @($swapExe, (Join-Path $root 'bin\llama.cpp-b11719\llama-server.exe'), (Join-Path $root 'litellm-venv\Scripts\litellm.exe'), (Join-Path $root 'models\Qwen3.6-27B-Q4_K_M.gguf'))) {
+foreach ($need in @($swapExe, (Join-Path $root 'bin\llama.cpp-b11719\llama-server.exe'), (Join-Path $root 'litellm-venv\Scripts\litellm.exe'), (Join-Path $root 'models\Qwen3.6-27B-Q4_K_M.gguf'), (Join-Path $root 'models\Qwen3.6-27B-Q6_K.gguf'))) {
   if (-not (Test-Path $need)) { throw "Missing $need. Run scripts\install.ps1 first." }
 }
 if (-not (Get-LocalAiSecret)) { throw 'No router key yet. Run scripts\init-secrets.ps1 first.' }
@@ -38,18 +39,23 @@ if ($swapUp -and $routerUp) {
   "Stack is already running (llama-swap $swapUrl, router $routerUrl). Nothing started."
   return
 }
-if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001)) {
+# llama-swap gives each model its own llama-server port from startPort: 10001 local-coder, 10002 local-coder-q6
+if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001) -or (Get-Listener 10002)) {
   throw 'The stack is only partly running or a port is taken. Run scripts\ai-down.ps1, then start again.'
 }
 
 # 3. guard: do not start on top of a game or other heavy GPU work
+$free = Get-VramFreeMiB
 if (-not $Force) {
   $games = if ($GamePathPattern) { Find-GameProcesses $GamePathPattern } else { Find-GameProcesses }
-  $free = Get-VramFreeMiB
   $why = @()
   if ($games) { $why += "game process running: $($games -join ', ')" }
   if ($free -lt $MinFreeVramMiB) { $why += "only $free MiB of VRAM free, the model needs about $MinFreeVramMiB MiB" }
   if ($why) { throw ("Not starting: " + ($why -join '; ') + ". Close the game or use -Force.") }
+}
+# the Q6_K entry is optional: low VRAM only rules it out, so warn instead of refusing
+if ($free -lt $Q6MinFreeVramMiB) {
+  Write-Warning "Only $free MiB of VRAM free: enough for local-coder, not for local-coder-q6 (about $Q6MinFreeVramMiB MiB). Free GPU memory before picking Local Coder Q6."
 }
 
 # 4. start
