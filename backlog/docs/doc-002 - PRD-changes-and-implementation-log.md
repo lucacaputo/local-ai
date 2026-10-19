@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 21:47'
+updated_date: '2026-10-19 22:18'
 ---
 # PRD changes and implementation log
 
@@ -14,9 +14,11 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | PRD | What changed | Why | Recorded in |
 |---|---|---|---|
 | Local context 64K (section 6, O4) | 128K for `local-coder` and `local-light`: llama-server `-c 131072`, and Claude Code compacts within it through `modelSettings.<model>.autoCompactWindow=131072`. `local-coder-q6` has 160K (`-c 163840`); `CLAUDE_CODE_MAX_CONTEXT_TOKENS=163840`, one value for every local model, matches the largest server (TASK-020) | At 64K Claude Code compacts at ~36K tokens and thrashed; 128K measured at 56 tok/s with a 94K prompt, 23.6 GB VRAM | decision-004, TASK-004, TASK-020 |
-| LiteLLM binds the Tailscale address and loopback (R5, section 4) | LiteLLM, llama-swap and llama-server bind to 127.0.0.1 only; `tailscale serve` publishes port 4000 on the tailnet | uvicorn takes one bind address; this leaves nothing on the LAN by construction | decision-006, TASK-007 |
+| LiteLLM binds the Tailscale address and loopback (R5, section 4) | LiteLLM, llama-swap, llama-server and the control service bind to 127.0.0.1 only; `tailscale serve` publishes port 4000 on the tailnet, in HTTP mode since m-3 with two routes, `/` (router) and `/control` (control service) | uvicorn takes one bind address; this leaves nothing on the LAN by construction | decision-006, decision-008, TASK-007, TASK-023, TASK-026 |
 | Windows Firewall rule scoped to the Tailscale interface (R5) | No extra rule: the Tailscale installer's `Tailscale-In` rules already limit inbound to the Tailscale addresses | Nothing else listens on a non-loopback address | decision-006, TASK-007 |
-| Router master key and a separate client local key (F6, R1) | One key serves as master and client key | Separate client keys need LiteLLM virtual keys, which need a database | decision-005, TASK-006 |
+| Router master key and a separate client local key (F6, R1) | One key serves as master and client key. Since m-3 it is used only on the PC; remote devices hold no key (next row) | Separate client keys need LiteLLM virtual keys, which need a database | decision-005, TASK-006 |
+| Clients authenticate with a local key (sections 4 and 5) | Remote devices get in by their Tailscale login: `tailscale serve` passes it in `Tailscale-User-Login`, and the router lets in the logins on an allowlist (by default the login the PC is signed in with). Requests from a browser are refused on this path | A key copied to every device had to be set up from the PC, which fails away from home; the tailnet already identifies the user | decision-008, TASK-023, TASK-024, TASK-031 |
+| F4: one command to start the stack, one to stop it, no auto-start at boot | A control service starts at logon (scheduled task) and runs `ai-up` or `ai-down` only when asked, from the Mac with `ai-remote.sh`. The AI stack itself still never starts by itself | Starting and stopping the stack away from home | decision-008, TASK-025, TASK-026, TASK-027 |
 | llama.cpp "CUDA 12.8+ build" (R6) | Official `win-cuda-13.4-x64` build plus cudart | No 12.8 build exists; 13.4 matches the driver | decision-002 |
 | Models and binaries location (not specified) | `D:\local-ai` (SN850X), outside the repo, `LOCAL_AI_ROOT` | Keeps weights out of git, free space on D: | decision-003 |
 | `install.ps1` "checks drivers/CUDA ... verifies Tailscale" (section 8) | Also installs missing uv and Tailscale with winget at pinned versions and downloads the hash-verified model; never installs the NVIDIA driver | Repeatable setup from a bare machine | TASK-008, `scripts/versions.psd1` |
@@ -209,6 +211,18 @@ Go: m-3 can build on identity headers.
 
 Effect on clients: in HTTP mode the tailnet IP gets 404, so the Mac must use the MagicDNS name from now on (TASK-024 changes its setup).
 
+## Mac client without the key (TASK-024)
+
+- `scripts/mac/setup-client.sh <url>` takes only the router URL. It must be the MagicDNS name: an IP is refused, because in HTTP mode tailscale serve answers only on the name. The script saves the URL in `~/.config/local-ai/router-url`, removes any router key left in the Keychain by the key-based setup, and checks `/v1/models` with the marker header.
+- `scripts/mac/claude-local.sh` sends `x-litellm-api-key: tailscale-identity` (the marker, not a secret) and no key. As before, it unsets `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` for Claude Code.
+- A key rotation is now done on the PC only (`docs/remote-client-macos.md`).
+
+| Check | Result |
+|---|---|
+| `setup-client.sh` on the Mac | Removed 1 router key item from the Keychain. "Router reachable, and it accepts this Mac's Tailscale login" |
+| Keychain afterwards | No `local-ai/router-key` item. The per-item check prints nothing (`grep -c` on the dump counted label and service, so it printed 2 for one item) |
+| Claude Code on the Mac | A Claude model and the local models answer; `/model` lists every local entry |
+
 ## Browser requests refused on the identity path (TASK-031)
 
 Gap left by TASK-023: tailscale serve attaches the user identity to every request from the device, also to requests made by a web page in the browser, and LiteLLM answers cross-origin requests permissively. Measured through the tailnet name with `Origin: https://evil.example`: CORS preflight 200 with `Access-Control-Allow-Origin: *`, `GET /v1/models` 200 and a `local-coder` chat 200, readable by the page. A malicious page that guessed the address (`http://caps:4000`) could have used the local models with admin rights on the router; Claude models were out of reach (the page has no subscription token).
@@ -222,6 +236,20 @@ Fix in `config/custom_auth.py`: a request that carries `Origin` or `Sec-Fetch-Si
 | Claude Code | Through the tailnet name with the marker: sonnet and local-coder answer; `claude-local.ps1` with the key answers |
 
 The control service (TASK-025) applies the same rule.
+
+## Control service (TASK-025)
+
+- `scripts/control-service.py` uses only the Python standard library and runs under the LiteLLM venv's interpreter, on 127.0.0.1:4100. Routes: `GET /health` (no auth), `GET /status`, `POST /up` and `POST /down`. Up and down run `ai-up.ps1` and `ai-down.ps1` without parameters, so no `-Force` or `-Warm`; a query string is ignored. One action runs at a time; a second gets 409. A failed script gives 422 with its message. Every request is logged to `D:\local-ai\logs\control.log` (time, login, method, path, code, outcome).
+- It lets requests in the same way as the router: an allowlisted `Tailscale-User-Login` and no `Origin` or `Sec-Fetch-Site`. There is no key path; at the PC, `ai-up` and `ai-down` are run directly.
+- tailscale serve publishes it as `/control` on tailnet port 4000 and strips the prefix. It holds no GPU memory and never starts the stack by itself. `scripts/start-control.ps1 [-Stop]` starts or stops it.
+
+| Check | Result |
+|---|---|
+| From WSL through the tailnet name | `/health` 200, status answered. Loopback without identity 401, `Origin` 401, `Sec-Fetch-Site` 401. `GET /up` 405, unknown route 404. `POST /up?Force=1` started the stack normally (query ignored). Up again: already running. Two concurrent ups: the second got 409 while status kept answering (running: up) |
+| GPU | The service process holds 0 MiB |
+| Game guard | With a stand-in game (a PING.EXE copy under `...\steamapps\common`): up 422 with the guard message |
+| Mac (curl) | Status down, up ok in 13.4 s, status up, down with VRAM back to 1,606 MiB; up refused while the stand-in game ran |
+| `ai-down` | Keeps the `/control` route |
 
 ## Control service started at logon (TASK-026)
 
@@ -242,3 +270,54 @@ The control service (TASK-025) applies the same rule.
 | `install.ps1 -CheckOnly` | Shows "not installed" or "installed, running, /control published" |
 
 The repetition follows a 10-minute grid counted from logon, so a crashed service is back within 10 minutes.
+
+## ai-remote on the Mac (TASK-027)
+
+- `scripts/mac/ai-remote.sh status|up|down` calls `<router-url>/control/<command>` with no key. The URL comes from the file written by `setup-client.sh`, or from `LOCAL_AI_ROUTER`. The JSON answer is rendered by `osascript -l JavaScript`, which every Mac has, so it needs neither jq nor Python. Exit status: 0 done, 1 refused or failed on the PC, 2 usage or no URL, 3 PC not reachable.
+- Messages by cause: the name does not resolve (curl exit 6: Tailscale is off on the Mac). The connection times out (the PC is asleep or off, Tailscale is off there, or nothing is published on port 4000; the PC's firewall drops connections to an unpublished port, so these cases look the same). 502 (control service not running), 404 (`/control` not published while `/` is), and 401, 409 and 422 from the service.
+- **Cut error messages.** The control service kept only the first stderr line of a failed script. `powershell -File` prints a throw as an error record wrapped at the console width (120 columns), so the longer guard message came back cut. The scripts now run inside `try { & script; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`, which returns the exact message.
+- The ai-up guard message now ends "Close the game or free the GPU, then try again (at the PC, -Force starts anyway)", since `-Force` cannot be passed remotely. The PC-side "Use: ..." hint of `ai-up` is not shown on the Mac.
+
+| Check | Result |
+|---|---|
+| From WSL through the tailnet name (`osascript` replaced by node) | Every message above, plus a port taken by another process (422) and a foreign `allowed-logins.txt` (401, then 200 after removing it) |
+| Mac | Status, up (13.2 s), up again ("Nothing started"), status, down, and Tailscale off on the Mac |
+| Not tested | A PC that is really asleep (TASK-029) |
+
+## decision-008: remote devices by Tailscale login, control service (TASK-028)
+
+The backlog CLI can set only a decision's title and status, so the body of decision-008 is kept here.
+
+**Context.** After m-2, each remote device held a copy of the router key (decision-005). It was set up from the PC (`copy-router-key.ps1` and the Mac Keychain), and the stack could be started only at the PC (`ai-up`). Away from home, neither works. The tailnet already knows which user each device belongs to, and the ACL lets only the user's own devices reach port 4000 (TASK-013).
+
+**Decision.**
+- `tailscale serve` publishes tailnet port 4000 in HTTP mode instead of a TCP forward (decision-006). It adds `Tailscale-User-Login` to each request and overwrites one sent by the client. The route `/` goes to the router (published by `ai-up`, removed by `ai-down`); `/control` goes to the control service (published by `install-control.ps1`, kept across reboots).
+- The router (`config/custom_auth.py`) and the control service let a request in when its login is on the allowlist and it carries neither `Origin` nor `Sec-Fetch-Site`, which browsers send (TASK-031). The allowlist is `D:\local-ai\allowed-logins.txt` if it exists, otherwise the login the PC is signed in to Tailscale with. It stays outside the repo.
+- The router key stays for calls made on the PC (`claude-local.ps1`), and works from any client as before; remote devices do not need it. Clients that come in by identity send the non-secret marker `x-litellm-api-key: tailscale-identity`, because LiteLLM forwards the Claude subscription token only when that header is present.
+- The control service (127.0.0.1:4100) runs `ai-up` and `ai-down` on request and does nothing else. A scheduled task starts it at logon and every 10 minutes. The AI stack itself never starts by itself (PRD F4). On the Mac: `ai-remote.sh status|up|down`.
+
+**Consequences.**
+- A Mac is set up with the URL alone, with nothing to do on the PC, and a key rotation no longer touches it.
+- Clients must use the MagicDNS name: in HTTP mode the tailnet IP gets 404.
+- Programs on the PC can reach the loopback ports and set the identity header themselves. The user accepted this (TASK-022): such a program runs as the user and can read the key from Credential Manager anyway.
+- Any device signed in with the user's Tailscale login can use the router and start or stop the stack. The ACL (`autogroup:self`) and the allowlist are the boundary.
+- The router reads the allowlist only when it starts, so after changing `allowed-logins.txt` the stack must be restarted. The control service re-reads it every 60 s.
+- The PC must be on with the user logged in. A sleeping PC cannot be woken (Wake-on-LAN is out of scope), and remote start needs `install-control.ps1` to have been run once.
+- Still one port and the same ACL grant: nothing new is published on the tailnet.
+- Idle shutdown of the stack is out of scope; llama-swap still unloads the model after 300 s.
+
+## Exposure check and secret scan after m-3 (TASK-028)
+
+PC addresses: Wi-Fi 192.168.1.101, WSL vEthernet 172.21.160.1, NordLynx 10.5.0.2, Tailscale 100.111.199.22.
+
+| Check | Result |
+|---|---|
+| Listeners, stack down | Control service 127.0.0.1:4100. tailscaled on 100.111.199.22:4000 and the IPv6 tailnet address, plus its own peer API ports (41431, 61944) on the tailnet addresses |
+| Listeners, stack up (`ai-up -Warm`, then `local-coder-q6` loaded) | Router 127.0.0.1:4000, control service 127.0.0.1:4100, llama-swap 127.0.0.1:8080, llama-server 127.0.0.1:10001 and 127.0.0.1:10002. Nothing from the stack on a non-loopback address in either state, apart from tailscaled on the tailnet addresses |
+| tailscale serve | Port 4000 only, HTTP mode. Stack down: `/control` -> 127.0.0.1:4100. Stack up: also `/` -> 127.0.0.1:4000. Funnel off |
+| Probes from WSL | Tailnet address: 4000 open; 4100, 8080, 10001 and 10002 closed. Wi-Fi and NordLynx addresses: all five closed |
+| nmap from the Mac, tailnet name, stack up with `local-coder` loaded (`nmap -Pn -p 4000,4100,8080,10001-10010`) | 4000 open; 4100, 8080 and 10001-10010 filtered. A chat request to `local-coder` with the marker and no key: 200 |
+| nmap from the Mac, Wi-Fi address 192.168.1.101, Tailscale off on the Mac, stack up | All 13 ports filtered |
+| nmap from the Mac, tailnet name, stack down (`ai-remote.sh down`, VRAM 22,697 -> 1,348 MiB) | 4000 open (the `/control` route keeps it published); all others filtered |
+| Secret scan (73 tracked files, 35 commits, `git log --all -p`) | Pattern hits only name prefixes, in docs and in `init-secrets.ps1`; no token values. No tracked `.env`, `.key`, `.pem`, `.p12` or `.pfx` files, and `allowed-logins.txt` is not tracked. The user's email is in no tracked file and no patch |
+| Router key (exact match inside PowerShell, count only) | In 0 of 73 tracked files, not in the history, in 0 of 76 worktree files (ignored ones included), in 0 of 50 log files |

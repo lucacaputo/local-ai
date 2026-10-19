@@ -1,6 +1,6 @@
 # Starts the LiteLLM router with the master key injected from Credential Manager.
 # The key lives only in the router process environment (never in a file or argument).
-# Loopback only; remote devices reach it through `tailscale serve --tcp 4000 tcp://127.0.0.1:4000`.
+# Loopback only; remote devices reach it through the / route that ai-up publishes on tailnet port 4000 (tailscale serve, HTTP mode).
 # Usage: scripts\start-litellm.ps1 [-ListenHost 127.0.0.1] [-Port 4000] [-Root D:\local-ai]
 param(
   [string]$ListenHost = '127.0.0.1',

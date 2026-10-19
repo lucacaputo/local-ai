@@ -1,5 +1,5 @@
-# Copies the router key to the clipboard without printing it, so it can be pasted into the
-# Keychain prompt of scripts/mac/setup-client.sh on another device. Clears the clipboard after 60 s
+# Copies the router key to the clipboard without printing it, for a client that cannot come in by its
+# Tailscale login (the Mac setup needs no key since TASK-024). Clears the clipboard after 60 s
 # (leave this window open until then). Windows clipboard history (Win+V), if enabled, may keep a copy:
 # clear it afterwards.
 # Usage: scripts\copy-router-key.ps1

@@ -2,7 +2,10 @@
 id: decision-005
 title: Use one router key as master and client key
 date: '2026-10-18 16:08'
-status: accepted
+status: >-
+  accepted for calls made on the PC; superseded for remote devices by
+  decision-008 (they get in by Tailscale login and hold no key, TASK-023,
+  TASK-024)
 ---
 ## Context
 

@@ -6,7 +6,8 @@ title: >-
 date: '2026-10-18 16:16'
 status: >-
   accepted; second-device check done in TASK-013 and LAN check in TASK-014 (see
-  doc-002)
+  doc-002); the TCP forward was replaced by tailscale serve in HTTP mode with
+  identity headers and a /control route on the same port (decision-008)
 ---
 ## Context
 

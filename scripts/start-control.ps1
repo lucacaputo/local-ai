@@ -1,6 +1,6 @@
 # Starts the control service (scripts\control-service.py, TASK-025) detached on 127.0.0.1:4100, with the
 # router's Tailscale allowlist injected, and waits until it answers. It only starts and stops the stack when
-# asked; it never starts it by itself. Publishing it on the tailnet and starting it at logon are TASK-026.
+# asked; it never starts it by itself. scripts\install-control.ps1 publishes it on the tailnet and starts it at logon (TASK-026).
 #
 #   scripts\start-control.ps1 [-Stop] [-Root D:\local-ai]
 #     -Stop  end the control service (the stack itself is left as it is)
