@@ -21,6 +21,3 @@ logs/
 .env.*
 *.key
 *.pem
-
-# Local bench output
-bench/results/raw/
