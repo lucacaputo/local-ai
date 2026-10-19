@@ -1,11 +1,11 @@
 ---
 id: TASK-027
 title: ai-remote command on the Mac
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-19 14:31'
-updated_date: '2026-10-19 22:00'
+updated_date: '2026-10-19 22:05'
 labels: []
 milestone: m-3
 dependencies:
@@ -25,10 +25,10 @@ The user needs one command on the Mac to check, start and stop the stack through
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 scripts/mac/ai-remote.sh status|up|down calls the control service without a key and prints its answer
-- [ ] #2 Clear messages for: stack already up, game guard refusal, not authorised, and PC unreachable (Tailscale off on either side, PC asleep or off, control service not running)
-- [ ] #3 The control address comes from the configuration written by setup-client.sh, not from editing the script
-- [ ] #4 Usage is documented in docs/remote-client-macos.md
+- [x] #1 scripts/mac/ai-remote.sh status|up|down calls the control service without a key and prints its answer
+- [x] #2 Clear messages for: stack already up, game guard refusal, not authorised, and PC unreachable (Tailscale off on either side, PC asleep or off, control service not running)
+- [x] #3 The control address comes from the configuration written by setup-client.sh, not from editing the script
+- [x] #4 Usage is documented in docs/remote-client-macos.md
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,4 +46,12 @@ The user needs one command on the Mac to check, start and stop the stack through
 
 <!-- SECTION:NOTES:BEGIN -->
 Built scripts/mac/ai-remote.sh status|up|down (bash 3.2 compatible; JSON rendered by osascript -l JavaScript; URL from LOCAL_AI_ROUTER or ~/.config/local-ai/router-url). Found while testing: the control service took only the first stderr line of a failed script, and powershell -File prints a throw as an error record wrapped at the console width (120 columns), so the longer guard message came back cut ('... -Force starts'); the old one fit by luck. control-service.py now runs the scripts through a try/catch wrapper that writes the exception message as one line (last stderr line kept). ai-up guard message: 'Close the game or free the GPU, then try again (at the PC, -Force starts anyway).' setup-client.sh points to ai-remote.sh when the router does not answer. Tests from WSL through the tailnet name (same identity as the Mac), osascript replaced by a node stand-in: status down; up (Stack healthy in 13.6 s, PC hint line hidden, claude-local.sh hint shown); up again (already running, Nothing started); status up; down; game guard with the fake game: 422 with the whole message, also in control.log; second up during an up: busy, and status meanwhile showed partly running, Running now: ai-up; ai-up refusing with a port taken: whole message; service stopped: 502 message; /control removed with the stack up: 404 message; /control removed with the stack down: connection times out (firewall drop), same as a PC that is off, so that message names the missing install too; allowed-logins.txt with another login: 401 after 20 s, file removed: 200 within 60 s; unresolvable name: exit 3 (rc 6 message); closed port: rc 7 message; unroutable address: timeout message after 10 s; no URL and bad command: exit 2. State after tests: stack down, service running, /control published, no allowed-logins.txt, fake game and port holder stopped. Pending: run on the Mac (real osascript and bash 3.2).
+
+Mac (user, real osascript and the Mac's bash): status down; up: Stack healthy in 13.2 s plus the claude-local.sh hint; up again: already running, Nothing started; status up; down with VRAM back to idle; with Tailscale off on the Mac: the 'Tailscale is off on this Mac' message. The game guard on the Mac was skipped at the user's request (the 422 path was tested from WSL with the same renderer).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+scripts/mac/ai-remote.sh status|up|down checks, starts and stops the stack from the Mac through the control service, with no key. It reads the router URL written by setup-client.sh (or LOCAL_AI_ROUTER), renders the JSON answers with osascript JavaScript (present on every Mac), and gives clear messages for: already running, the game guard, busy, not authorised, Tailscale off on the Mac, the PC not answering (asleep, off, Tailscale off there, or the service never installed: these look the same from the Mac), the control service not running (502), and /control not published (404). Exit status: 0 done, 1 refused or failed, 2 usage or no URL, 3 PC unreachable. Also fixed: control-service.py returned a failed script's error cut at the console width, so it now runs the scripts through a try/catch wrapper and returns the exact message. The ai-up guard message no longer offers -Force as the only way out, and setup-client.sh points to ai-remote.sh. Documented in docs/remote-client-macos.md. Verified from WSL for every case, and by the user on the Mac for status, up, up again, down and Tailscale off. Not covered: an actually sleeping PC (left for the TASK-029 acceptance run).
+<!-- SECTION:FINAL_SUMMARY:END -->
