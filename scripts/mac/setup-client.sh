@@ -30,7 +30,9 @@ code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' -H 'x-litellm-api-key: tail
 case "$code" in
   200) echo "Router reachable, and it accepts this Mac's Tailscale login." ;;
   401) echo "Router reachable, but it refuses this Mac's Tailscale login: add the login to D:\\local-ai\\allowed-logins.txt on the PC, or sign the Mac in with the same Tailscale account as the PC." ;;
-  000|404|502) echo "No answer from the router (HTTP $code): the stack is probably down (scripts\\ai-up.ps1 on the PC), or Tailscale is off on one side. The URL is saved; try again once it is up." ;;
+  000|404|502) echo "No answer from the router (HTTP $code): the stack is probably down (start it with scripts/mac/ai-remote.sh up), or Tailscale is off on one side. The URL is saved; try again once it is up." ;;
   *) echo "Unexpected answer from the router: HTTP $code." ;;
 esac
-echo "Start Claude Code with: $(cd "$(dirname "$0")" && pwd)/claude-local.sh"
+here="$(cd "$(dirname "$0")" && pwd)"
+echo "Start Claude Code with: $here/claude-local.sh"
+echo "Check, start or stop the stack on the PC with: $here/ai-remote.sh status|up|down"

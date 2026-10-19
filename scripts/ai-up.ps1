@@ -51,7 +51,7 @@ if (-not $Force) {
   $why = @()
   if ($games) { $why += "game process running: $($games -join ', ')" }
   if ($free -lt $MinFreeVramMiB) { $why += "only $free MiB of VRAM free, the model needs about $MinFreeVramMiB MiB" }
-  if ($why) { throw ("Not starting: " + ($why -join '; ') + ". Close the game or use -Force.") }
+  if ($why) { throw ("Not starting: " + ($why -join '; ') + ". Close the game or free the GPU, then try again (at the PC, -Force starts anyway).") }
 }
 # the Q6_K entry is optional: low VRAM only rules it out, so warn instead of refusing
 if ($free -lt $Q6MinFreeVramMiB) {

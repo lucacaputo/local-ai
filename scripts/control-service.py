@@ -109,14 +109,18 @@ def _status():
 
 
 def _run_script(name):
-    """Runs scripts\\<name>.ps1 and returns (ok, lines). Errors keep only the message line of the throw."""
-    p = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(SCRIPTS, f"{name}.ps1")],
+    """Runs scripts\\<name>.ps1 and returns (ok, lines). A throw comes back as its message only: the wrapper writes it
+    to stderr as one line, where powershell -File would print the whole error record wrapped at the console width
+    (which cut the game guard message, TASK-027)."""
+    script = os.path.join(SCRIPTS, f"{name}.ps1")
+    p = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                        f"try {{ & '{script}'; exit 0 }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}"],
                        capture_output=True, text=True, errors="replace", timeout=300)
     out = [line.rstrip() for line in p.stdout.splitlines() if line.strip()]
     if p.returncode == 0:
         return True, out
     err = [line.strip() for line in p.stderr.splitlines() if line.strip()]
-    return False, out + err[:1]
+    return False, out + err[-1:]
 
 
 class Handler(BaseHTTPRequestHandler):
