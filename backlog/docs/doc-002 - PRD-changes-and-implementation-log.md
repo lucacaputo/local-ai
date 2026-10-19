@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 14:44'
+updated_date: '2026-10-19 15:02'
 ---
 # PRD changes and implementation log
 
@@ -191,3 +191,20 @@ Decisions for m-3:
 - Accepted (user, 2026-10-19): programs on the PC can reach the loopback port and set identity headers themselves.
 
 Go: m-3 can build on identity headers.
+
+## Router accepts the Tailscale identity (TASK-023)
+
+- `config/custom_auth.py` lets a request in when `Tailscale-User-Login` (case-insensitive) is on the allowlist, otherwise when the key matches as before, otherwise 401.
+- The allowlist reaches the router process as `LOCAL_AI_ALLOWED_LOGINS`, set by `scripts/start-litellm.ps1`: the lines of `D:\local-ai\allowed-logins.txt` if that file exists, otherwise the login the PC itself is signed in to Tailscale with. Nothing about it is in the repo; with Tailscale signed out and no file it is empty, and the router is key-only.
+- **Marker header.** LiteLLM forwards the client's Claude subscription token (`Authorization`) to Anthropic only when the request also carries `x-litellm-api-key`, with any value (`litellm_pre_call_utils.py`: without it, `Authorization` counts as the proxy credential and is dropped; there is no setting for this). Without it Claude models failed with "Missing Anthropic API Key" while local models worked. Clients that come in by identity therefore send `x-litellm-api-key: tailscale-identity`, a fixed non-secret value that never lets a request in by itself (loopback with the marker: 401).
+- `ai-up` publishes the `/` route of tailnet port 4000 in HTTP mode, after removing a TCP forward left by the old version (TCP and HTTP cannot share the port), and prints `tailnet http://caps.tail0144cb.ts.net:4000`. `ai-down` removes only `/`, so the control service route stays.
+
+| Check | Result |
+|---|---|
+| Unit test (fake requests) | 11/11: allowlisted login in any case, second login, other login refused, other login plus key allowed, no identity refused, key in either header, wrong key refused, empty allowlist means key-only |
+| Through the tailnet name, no key | `/v1/models` 200; Claude Code with the marker: sonnet, local-coder and local-coder-q6 answer |
+| Loopback | No key 401, forged `Tailscale-User-Login` 401, key 200; `claude-local.ps1` works |
+| Allowlist file without the user login | Through the tailnet name: no headers 401, marker 401, key 200 |
+| ai-up / ai-down | TCP forward replaced by the HTTP route; second ai-up starts nothing; ai-down keeps a `/control` route, also after a killed router |
+
+Effect on clients: in HTTP mode the tailnet IP gets 404, so the Mac must use the MagicDNS name from now on (TASK-024 changes its setup).

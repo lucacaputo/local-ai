@@ -48,3 +48,30 @@ function Find-GameProcesses([string]$Pattern = $script:DefaultGamePathPattern) {
 }
 
 function Get-StateFile([string]$Root) { Join-Path $Root 'run\stack.json' }
+
+# This PC's MagicDNS name (caps.<tailnet>.ts.net); HTTP-mode serve only answers on the name, not the IP (TASK-022).
+function Get-TailnetName {
+  try { ((Invoke-Quiet (Get-TailscaleExe) @('status', '--json')) | ConvertFrom-Json).Self.DNSName.TrimEnd('.') } catch { $null }
+}
+
+# Tailscale logins the router lets in without the key (TASK-023): the lines of <root>\allowed-logins.txt when that
+# file exists (# starts a comment), otherwise the login this PC itself is signed in with. Kept out of the repo.
+function Get-AllowedLogins([string]$Root) {
+  $file = Join-Path $Root 'allowed-logins.txt'
+  if (Test-Path $file) { return @(Get-Content $file | ForEach-Object { ($_ -replace '#.*$', '').Trim() } | Where-Object { $_ }) }
+  try { $s = (Invoke-Quiet (Get-TailscaleExe) @('status', '--json')) | ConvertFrom-Json } catch { return @() }
+  $u = $s.User."$($s.Self.UserID)"
+  if ($u -and $u.LoginName) { @($u.LoginName) } else { @() }
+}
+
+# tailscale serve configuration of port 4000: Mode 'tcp' (how it was published before TASK-023), 'http' or $null,
+# and the HTTP route paths on it ('/' is the router, '/control' the control service).
+function Get-Serve4000 {
+  $none = [pscustomobject]@{ Mode = $null; Paths = @() }
+  try { $s = (Invoke-Quiet (Get-TailscaleExe) @('serve', 'status', '--json')) | ConvertFrom-Json } catch { return $none }
+  $p = $s.TCP.'4000'
+  if (-not $p) { return $none }
+  if ($p.TCPForward) { return [pscustomobject]@{ Mode = 'tcp'; Paths = @() } }
+  $paths = @($s.Web.PSObject.Properties | Where-Object { $_.Name -like '*:4000' } | ForEach-Object { $_.Value.Handlers.PSObject.Properties.Name })
+  [pscustomobject]@{ Mode = 'http'; Paths = $paths }
+}

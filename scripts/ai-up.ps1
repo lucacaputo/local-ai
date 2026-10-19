@@ -75,14 +75,15 @@ try {
   throw
 }
 
-# 5. tailnet
+# 5. tailnet: the "/" route of port 4000 in HTTP mode, so tailscale serve tells the router who is calling
+# (TASK-022, TASK-023). Other routes on the port (the control service) are not ours to touch.
 $tailnet = ''
 if (-not $NoTailnet) {
   $ts = Get-TailscaleExe
   if ((Test-Path $ts) -and ((Invoke-Quiet $ts @('status')) -notmatch 'Logged out|stopped')) {
-    Invoke-Quiet $ts @('serve', '--bg', '--tcp', '4000', 'tcp://127.0.0.1:4000') | Out-Null
-    $ip = (Invoke-Quiet $ts @('ip', '-4')).Trim()
-    $tailnet = "tailnet http://${ip}:4000"
+    if ((Get-Serve4000).Mode -eq 'tcp') { Invoke-Quiet $ts @('serve', '--tcp=4000', 'off') | Out-Null }   # TCP and HTTP cannot share the port
+    Invoke-Quiet $ts @('serve', '--bg', '--http', '4000', 'http://127.0.0.1:4000') | Out-Null
+    $tailnet = "tailnet http://$(Get-TailnetName):4000"
   } else { Write-Warning 'Tailscale is not signed in; the router is not published on the tailnet.' }
 }
 

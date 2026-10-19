@@ -1,4 +1,4 @@
-# Stops the local AI stack and frees the GPU: unpublishes the tailnet port, stops the router,
+# Stops the local AI stack and frees the GPU: unpublishes the router's tailnet route, stops the router,
 # llama-swap and llama-server, then waits for VRAM to drop back to idle. Safe to run when nothing runs.
 param([int]$WaitSec = 30)
 $ErrorActionPreference = 'Stop'
@@ -14,10 +14,13 @@ if (Test-Path $stateFile) {
 }
 $stopped = @()
 
-# tailnet publishing first, so nothing forwards to a dying router
+# tailnet publishing first, so nothing forwards to a dying router. Only the router's "/" route is removed; other
+# routes on port 4000 (the control service) stay. A TCP forward is how ai-up published it before TASK-023.
 $ts = Get-TailscaleExe
-if ((Test-Path $ts) -and ((Invoke-Quiet $ts @('serve', 'status')) -match ':4000')) {
-  Invoke-Quiet $ts @('serve', '--tcp=4000', 'off') | Out-Null; $stopped += 'tailnet publishing'
+if (Test-Path $ts) {
+  $serve = Get-Serve4000
+  if ($serve.Mode -eq 'tcp') { Invoke-Quiet $ts @('serve', '--tcp=4000', 'off') | Out-Null; $stopped += 'tailnet publishing' }
+  elseif ($serve.Paths -contains '/') { Invoke-Quiet $ts @('serve', '--http', '4000', '--set-path', '/', 'off') | Out-Null; $stopped += 'tailnet publishing' }
 }
 
 # processes: only things that belong to the stack are touched. Router first, then llama-swap, which

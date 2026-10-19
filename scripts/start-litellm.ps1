@@ -24,15 +24,16 @@ if ($clash) { throw "Port $Port is already in use on $($clash.LocalAddress) (pid
 $logs = Join-Path $Root 'logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 
-$old = @{ K = $env:LITELLM_MASTER_KEY; U = $env:PYTHONUTF8; T = $env:LITELLM_TELEMETRY }
+$old = @{ K = $env:LITELLM_MASTER_KEY; U = $env:PYTHONUTF8; T = $env:LITELLM_TELEMETRY; A = $env:LOCAL_AI_ALLOWED_LOGINS }
 try {
   $env:LITELLM_MASTER_KEY = Get-LocalAiRouterKey
+  $env:LOCAL_AI_ALLOWED_LOGINS = (Get-AllowedLogins $Root) -join ','   # read by config\custom_auth.py
   $env:PYTHONUTF8 = '1'          # LiteLLM's banner crashes on cp1252 when output is redirected
   $env:LITELLM_TELEMETRY = 'False'
   Start-Detached $exe @('--config', (Join-Path $repo 'config\litellm.yaml'), '--host', $ListenHost, '--port', "$Port") `
     (Join-Path $logs 'litellm.out.log') (Join-Path $logs 'litellm.err.log') | Out-Null
 } finally {
-  $env:LITELLM_MASTER_KEY = $old.K; $env:PYTHONUTF8 = $old.U; $env:LITELLM_TELEMETRY = $old.T
+  $env:LITELLM_MASTER_KEY = $old.K; $env:PYTHONUTF8 = $old.U; $env:LITELLM_TELEMETRY = $old.T; $env:LOCAL_AI_ALLOWED_LOGINS = $old.A
 }
 for ($i = 0; $i -lt 60; $i++) {
   Start-Sleep 2
