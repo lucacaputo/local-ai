@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-19 22:35'
+updated_date: '2026-10-21 17:23'
 ---
 # PRD changes and implementation log
 
@@ -335,3 +335,16 @@ Fix: the task has two triggers. The logon trigger, without a repetition, starts 
 | Killed service | Killed at 00:24:19. The time trigger ran at 00:34:04 and the service was back at 00:34:05 with 1 allowed login, with no logon in between. Next check set to 00:44:03 |
 | Uninstall twice, install | The second uninstall found nothing to remove. After the install the next check was 10 minutes out, and `install.ps1 -CheckOnly` reported "installed, running, /control published" |
 | Stack | Down throughout |
+
+## Acceptance run away from home (TASK-029, m-3)
+
+The user ran the plan from the Mac on another network on 2026-10-21 and reported that every step passed. The PC side was checked afterwards from its logs.
+
+| Check | Result |
+|---|---|
+| Fresh client setup | `router-url` removed, `setup-client.sh` with the URL and no key; nothing done at the PC (user report) |
+| `ai-remote.sh up` | Control log 09:53:41: `POST /up 200`, stack healthy in 16.8 s, by the user's login. The allowlist was empty when the service started at logon (07:47:20) and held 1 login when read again at 09:53:23, before the first request |
+| Claude Code | `/model` listed Claude and local models; local-coder and a Claude model answered; the `ts-demo` edit completed with local-coder (user report). Router 09:53-16:57: 867 requests from the Mac's tailnet address, 833 answered 200 |
+| `ai-remote.sh down` | Control log 16:58:41: `POST /down 200`, tailnet publishing, router and llama-swap stopped. Status then showed the stack down (user report). Checked at the PC afterwards: VRAM 1,607 MiB, `tailscale serve` publishes only `/control` |
+| Errors seen by the router, not visible to the user | 29 x 429 from api.anthropic.com (subscription rate limit; Claude Code retries these). 8 x 500 on `/v1/messages/count_tokens` for local models: LiteLLM's token counter fails on some tool schemas (`KeyError: 'items'`) and llama-swap has no `/v1/responses/input_tokens` (404) |
+| Not tested | A PC that is really asleep (sleep on AC was set to never for the run; Wake-on-LAN is out of scope) |
