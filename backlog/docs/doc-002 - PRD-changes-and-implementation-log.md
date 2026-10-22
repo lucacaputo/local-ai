@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-21 22:03'
+updated_date: '2026-10-22 21:07'
 ---
 # PRD changes and implementation log
 
@@ -351,7 +351,7 @@ The user ran the plan from the Mac on another network on 2026-10-21 and reported
 
 ## Qwen3.8 with MTP, trial entry (TASK-033, m-4)
 
-`local-coder-38` serves unsloth `Qwen3.8-27B-UD-Q6_K.gguf` (21,983,677,344 bytes, SHA-256 in `scripts/versions.psd1`) with MTP speculative decoding: `--spec-type draft-mtp --spec-draft-n-max 3`, draft KV cache q8_0, 160K window, `--parallel 2 -kvu`, port 10003. The MTP head is inside the GGUF (`blk.64.nextn.*`); the Qwen3.6 GGUFs have none. Qwen/Qwen3.8-27B `config.json` is identical to Qwen3.6-27B's, so the pinned llama.cpp b11719 runs it unchanged. The Qwen3.6 entries are unchanged.
+`local-coder-38` serves unsloth `Qwen3.8-27B-UD-Q6_K.gguf` (21,983,677,344 bytes, SHA-256 in `scripts/versions.psd1`) with MTP speculative decoding: `--spec-type draft-mtp --spec-draft-n-max 3`, draft KV cache q8_0, 160K window, `--parallel 2 -kvu`, port 10002 (llama-swap gives ports in alphabetical order of the model names, so `local-coder-q6` moved to 10003; corrected in TASK-034). The MTP head is inside the GGUF (`blk.64.nextn.*`); the Qwen3.6 GGUFs have none. Qwen/Qwen3.8-27B `config.json` is identical to Qwen3.6-27B's, so the pinned llama.cpp b11719 runs it unchanged. The Qwen3.6 entries are unchanged.
 
 Measured against a bench llama-swap (`D:\local-ai\scratch\q38`), unlike TASK-020 with real Python source as the long prompt (LiteLLM's proxy package) and a ~1,200-token code answer, Qwen's thinking sampling (temperature 1.0, top_p 0.95, top_k 20), median of 3 for short prompts. VRAM includes the desktop (about 1.6 GB idle, 32,607 MiB total).
 
@@ -387,6 +387,37 @@ Prompt processing: Qwen3.6 2,075 tok/s at 98K and 1,571 at 161K; Qwen3.8 without
 |---|---|
 | Install | `install.ps1` downloaded and hash-verified the file; `-CheckOnly` lists all three models [ok] |
 | ts-demo (discountPercent with RangeError, `Cart.count()`, tests, `npm test`) through the router with `claude -p` on the PC | Done in 74 s, 12 tool calls, no tool errors and no wrong-path first Read; edits correct; 7/7 tests pass. The prompt is kept at `D:\local-ai\scratch\q38\tsdemo-prompt.txt` for TASK-034 |
-| Ports and stack scripts | llama-swap gives the entry port 10003; the ai-up pre-check and ai-down cover it |
+| Ports and stack scripts | The ai-up pre-check and ai-down cover 10001-10003. First recorded as port 10003; it is 10002, and Q6 moved to 10003 (TASK-034 fixed the labels and the control service's port map) |
 
 Not tested here: the Mac (needs the pushed config), quality beyond one ts-demo run and the reported long-thinking loops (TASK-034), OpenCode (TASK-035).
+
+## Quality check: Qwen3.8 vs Qwen3.6 (TASK-034, m-4)
+
+A small version of the PRD bake-off (section 6, R4 gate), kept in `bench/quality/` so it can be re-run: seven tasks (README there has the prompts, fixtures, hidden tests and rubrics), each run twice per model in Claude Code through the router on the PC (`claude -p`, the repo's `claude-settings.json`, the full default tool list, the same allowed tools). `local-coder-q6` (Qwen3.6 Q6_K) against `local-coder-38` (Qwen3.8 UD-Q6_K, MTP draft 3), both at 160K with 2 slots. Run data: `D:\local-ai\scratch\quality\runs`.
+
+| Task | Qwen3.6 Q6_K: pass, time (s) | Qwen3.8 + MTP: pass, time (s) |
+|---|---|---|
+| t1 ts-demo edit (hidden tests) | 2/2, 82 / 77 | 2/2, 63 / 47 |
+| t2 multi-step edit: rename, coupon module, tests (hidden tests) | 2/2, 100 / 99 | 2/2, 112 / 145 |
+| t3 review of the TASK-033 diff, 3 seeded bugs | 2/2: 3/3 bugs both times; one weak extra claim each (autoCompactWindow) | 2/2: 3/3 bugs both times; run 2 also claimed a missing `--draft-model` (wrong); 333 / 797 s |
+| t4 PR description (rubric) | 1/2: run 2 invented test results ("confirmed ai-down stops all three ports") | 1/2: run 1 invented a start/stop test; run 2 the best of the four |
+| t5 logic puzzle, no tools | 2/2, 68 / 70 | 2/2, 110 / 68 |
+| t6 400-line module + 30 tests, full tool list | 2/2, 233 / 244 | 2/2, 592 / 844 |
+| t6c the same, short tool list | 2/2, 240 / 289 | 2/2, 696 / 493 |
+| **All** | **13/14, 32 min** | **13/14, 76 min** |
+
+| Measure | Qwen3.6 Q6_K | Qwen3.8 + MTP |
+|---|---|---|
+| Tool-call failures (R4 gate: under 5%) | 33 of 171 calls, 19% (31 "File does not exist": the wrong-path Read seen since m-1) | 4 of 182 calls, 2.2% (2 WebSearch without permission, 2 Write calls with broken JSON after the output cap) |
+| Failed test runs inside a task (normal iteration, not counted above) | 4 | 8 |
+| Generation speed in Claude Code (52-66K prompts) | 52.6-62.2 tok/s | 93.9-141.4 tok/s, MTP acceptance 0.67-0.88 |
+| Output tokens, whole set | 82,278 | 430,165 |
+| Requests that hit Claude Code's 32,000 output-token cap | 0 | 5 (t3 run 2, t6 runs 1 and 2, t6c run 1) |
+
+**Thinking.** LiteLLM forwards Claude Code's requests to llama-swap as `/v1/responses` and drops the `thinking` and effort parameters, so both models think at their template default; for Qwen3.8 that is `reasoning_effort` xhigh. The reasoning comes back from llama.cpp but LiteLLM does not turn it into thinking blocks, so Claude Code shows nothing while the model thinks. Qwen3.6 thought little (750-21,657 characters per run). Qwen3.8 thought 4-50 times as much, and on the long tasks it drafted whole files inside its reasoning before calling Write. Four of the five capped requests are that: 74-117K characters of drafting with low repetition, then the cap; Claude Code asks to continue and the work is partly redone. That is why t3 and t6 take 2-3 times as long on Qwen3.8 although it generates twice as fast, and it fits the lag spikes the user saw from the Mac (single requests of 4-5 minutes with no visible output).
+
+**Long-thinking loop: confirmed, rare.** One request in 14 Qwen3.8 runs (t3 run 2) fell into a degenerate loop: after 14K characters of normal reasoning about the chat template's escape sequences it repeated `\n` for 41K characters until the cap; the run still finished with a correct review. In t3 run 1 the model quoted the template's think tags, the reasoning parser ended the thinking there, and 53K characters of reasoning landed in the visible answer (the review at its end was correct). Both happened while reviewing a chat template; no other request showed either.
+
+**Many-tools slowdown: not seen at a size that matters.** Long answers (2,000+ tokens) with Claude Code's full tool list against the short list: Qwen3.8 106.4 / 106.5 against 116.4 / 113.3 tok/s (about 7% slower), Qwen3.6 53.9 / 53.9 against 55.8 / 55.5 (about 3%). Prompts were 52-66K tokens, so the speeds sit between TASK-033's bench figures for short and 94K prompts. llama.cpp #27615's slowdown on long outputs does not show here.
+
+**Recommendation.** Qwen3.8 is the better coding agent: it passes the R4 tool-call gate (2.2% against 19%) with the same pass rate, finds the same bugs, and is about twice as fast per token; on short tasks (t1) it also finishes sooner. Its weakness is thinking at xhigh: long tasks take much longer, five requests ran into the 32K cap and one looped. Proposed: replace Qwen3.6 with Qwen3.8 in TASK-036, with a lower default `reasoning_effort` in the llama-swap entry (`--chat-template-kwargs`), after a short re-run of t1-t3 and t6 to check that quality holds at the lower effort. The user decides.

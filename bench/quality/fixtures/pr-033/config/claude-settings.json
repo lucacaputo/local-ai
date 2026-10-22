@@ -1,0 +1,35 @@
+{
+  "modelPicker": {
+    "options": [
+      {
+        "model": "local-coder",
+        "label": "Local Coder",
+        "description": "Qwen3.6 27B on the home RTX 5090"
+      },
+      {
+        "model": "local-light",
+        "label": "Local Light",
+        "description": "Local model for reviews and text (PR, Jira)"
+      },
+      {
+        "model": "local-coder-q6",
+        "label": "Local Coder Q6",
+        "description": "Qwen3.6 27B Q6_K, larger window; swapping with Local Coder takes a few seconds"
+      },
+      {
+        "model": "local-coder-38",
+        "label": "Local Coder 3.8",
+        "description": "Qwen3.8 27B Q6 with MTP, trial; about twice as fast, 160K window"
+      }
+    ]
+  },
+  "modelSettings": {
+    "local-coder": { "autoCompactWindow": 131072 },
+    "local-light": { "autoCompactWindow": 131072 }
+  },
+  "env": {
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "163840",
+    "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": "8000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80"
+  }
+}

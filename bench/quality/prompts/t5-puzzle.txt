@@ -1,0 +1,26 @@
+Solve this puzzle by reasoning alone; do not use any tools.
+
+Five developers sit at desks 1 to 5 in a row, desk 1 on the far left. Each has a different name (Ada, Bruno, Chiara, Dario, Elena), main language (Rust, Go, TypeScript, Python, C), editor (Vim, Emacs, VS Code, Zed, Helix), operating system (Linux, macOS, Windows, FreeBSD, ChromeOS) and drink (tea, coffee, water, juice, milk). "Next to" means at an adjacent desk.
+
+1. Ada sits at desk 1.
+2. Bruno sits next to Elena.
+3. Chiara writes Rust.
+4. The Go developer sits immediately to the left of the TypeScript developer.
+5. Dario does not write Python.
+6. The C developer uses Vim.
+7. The developer at desk 3 uses Emacs.
+8. The Zed user sits next to the Python developer.
+9. Ada does not use Helix.
+10. The VS Code user runs macOS.
+11. Bruno runs Linux.
+12. The developer at desk 5 runs FreeBSD.
+13. The Windows user sits next to the Rust developer.
+14. The Go developer drinks coffee.
+15. Elena drinks tea.
+16. The ChromeOS user drinks milk.
+17. The water drinker sits next to the Helix user.
+18. The developer at desk 1 does not drink juice.
+19. The milk drinker does not sit at desk 1 or desk 5.
+
+Give the full solution, then end with exactly five lines, one per desk from 1 to 5, in this form:
+DESK <n>: <name>, <language>, <editor>, <OS>, <drink>

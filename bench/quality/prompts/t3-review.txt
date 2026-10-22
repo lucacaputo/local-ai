@@ -1,0 +1,2 @@
+change.diff is a change to this repository; the files already contain it. It adds a trial model to a local AI stack: llama-swap serves llama.cpp models, a LiteLLM router sits in front of it, and Claude Code picks models through config/claude-settings.json. scripts/ai-up.ps1 runs from the scripts folder of the repository; the models and binaries live in a separate folder, LOCAL_AI_ROOT.
+Review the change. List every bug you find, most severe first, each with the file, the line and why it is wrong. Do not edit any files.

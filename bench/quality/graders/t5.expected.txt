@@ -1,0 +1,5 @@
+DESK 1: Ada, Go, VS Code, macOS, coffee
+DESK 2: Bruno, TypeScript, Zed, Linux, juice
+DESK 3: Elena, Python, Emacs, Windows, tea
+DESK 4: Chiara, Rust, Helix, ChromeOS, milk
+DESK 5: Dario, C, Vim, FreeBSD, water

@@ -1,0 +1,45 @@
+# LiteLLM router: Claude pass-through (client subscription token) + local models.
+# No api_key on anthropic/*: requests without a subscription token fail with 401
+# instead of falling back to API billing. See backlog TASK-003.
+model_list:
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: "anthropic/*"
+
+  # openai/ route on purpose: the anthropic/ provider type forwards the client's
+  # OAuth token to its api_base, which would hand it to the local server.
+  - model_name: local-coder
+    litellm_params:
+      model: openai/local-coder
+      api_base: http://127.0.0.1:8080/v1   # llama-swap (loopback)
+      api_key: none  # llama-swap runs without auth; not a secret
+
+  # Alias of local-coder in llama-swap for now; a smaller model can replace it later (O3).
+  - model_name: local-light
+    litellm_params:
+      model: openai/local-light
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none
+
+  # Same model at Q6_K with a larger window (TASK-020); llama-swap swaps it with local-coder.
+  - model_name: local-coder-q6
+    litellm_params:
+      model: openai/local-coder-q6
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none
+
+  # Qwen3.8 with MTP, trial (TASK-033); also swapped in and out by llama-swap.
+  - model_name: local-coder-38
+    litellm_params:
+      model: openai/local-coder-38
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # No database, so LiteLLM's own key lookup answers 400 for a wrong key; this answers 401 (TASK-011).
+  custom_auth: custom_auth.user_api_key_auth
+
+litellm_settings:
+  drop_params: true
+  telemetry: false

@@ -1,0 +1,2 @@
+change.diff is a change to this repository; the files already contain it. It adds a trial model to a local AI stack: llama-swap serves llama.cpp models, a LiteLLM router sits in front of it, and Claude Code picks models through config/claude-settings.json.
+Write a pull-request description for this change and save it as PR.md: a title of at most 72 characters, a short summary, the changes grouped by file, how it was tested, and the risks. Only state what the diff and the files show.

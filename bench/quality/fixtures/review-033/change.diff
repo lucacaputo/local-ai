@@ -1,0 +1,331 @@
+diff --git a/config/claude-settings.json b/config/claude-settings.json
+index 152f377..3db61ab 100644
+--- a/config/claude-settings.json
++++ b/config/claude-settings.json
+@@ -15,6 +15,11 @@
+         "model": "local-coder-q6",
+         "label": "Local Coder Q6",
+         "description": "Qwen3.6 27B Q6_K, larger window; swapping with Local Coder takes a few seconds"
++      },
++      {
++        "model": "local-coder-38",
++        "label": "Local Coder 3.8",
++        "description": "Qwen3.8 27B Q6 with MTP, trial; about twice as fast, 160K window"
+       }
+     ]
+   },
+diff --git a/config/litellm.yaml b/config/litellm.yaml
+index 5ebb8d6..5972853 100644
+--- a/config/litellm.yaml
++++ b/config/litellm.yaml
+@@ -28,6 +28,13 @@ model_list:
+       api_base: http://127.0.0.1:8080/v1
+       api_key: none
+ 
++  # Qwen3.8 with MTP, trial (TASK-033); also swapped in and out by llama-swap.
++  - model_name: local-coder-38
++    litellm_params:
++      model: openai/local-coder-q6
++      api_base: http://127.0.0.1:8080/v1
++      api_key: none
++
+ general_settings:
+   master_key: os.environ/LITELLM_MASTER_KEY
+   # No database, so LiteLLM's own key lookup answers 400 for a wrong key; this answers 401 (TASK-011).
+diff --git a/config/llama-swap.yaml b/config/llama-swap.yaml
+index a8764a3..f860673 100644
+--- a/config/llama-swap.yaml
++++ b/config/llama-swap.yaml
+@@ -1,7 +1,8 @@
+ # llama-swap: loads llama-server on the first request and unloads it after `ttl` seconds idle.
+ # Start with:  llama-swap -config config\llama-swap.yaml -listen 127.0.0.1:8080
+ # (the default listen address is :8080 on ALL interfaces, so always pass -listen)
+-# LOCAL_AI_ROOT must point at the folder holding bin\ and models\ (D:\local-ai, decision-003).
++# LOCAL_AI_ROOT must point at the folder holding bin\ and models\ (D:\local-ai, decision-003);
++# LOCAL_AI_REPO at this repo (ai-up sets both).
+ healthCheckTimeout: 180
+ logLevel: info
+ logToStdout: "proxy"
+@@ -46,3 +47,18 @@ models:
+       --jinja -c ${ctx-q6} -ngl 99 -fa on
+       --parallel 2 -kvu
+       --cache-type-k q8_0 --cache-type-v q8_0
++
++  # Trial (TASK-033): Qwen3.8 with MTP speculative decoding; the MTP head is inside the GGUF.
++  # Draft 3 measured 149 tok/s short and 79 tok/s at a full 160K prompt (Qwen3.6 Q6_K: 62 / 41), using about 1.5 GB more VRAM.
++  "local-coder-38":
++    name: "Local Coder 3.8"
++    description: "Qwen3.8 27B UD-Q6_K with MTP, trial"
++    ttl: 300
++    cmd: |
++      ${llama-server}
++      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.8-27B-UD-Q6_K.gguf
++      --jinja -c ${ctx-q6} -ngl 99 -fa on
++      --parallel 2 -kvu
++      --cache-type-k q8_0 --cache-type-v q8_0
++      --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-type-k q8_0 --spec-draft-type-v q8_0
++      --chat-template-file ${env.LOCAL_AI_REPO}\config\qwen3.8-chat-template.jinja
+diff --git a/config/qwen3.8-chat-template.jinja b/config/qwen3.8-chat-template.jinja
+new file mode 100644
+index 0000000..a2bf6b0
+--- /dev/null
++++ b/config/qwen3.8-chat-template.jinja
+@@ -0,0 +1,187 @@
++{#- Qwen3.8-27B chat template for llama-server (TASK-033): unsloth's template from Qwen3.8-27B-UD-Q6_K.gguf with one change.
++    A system or developer message after the leading ones is rendered as its own system turn instead of raising
++    'System message must be at the beginning.', which Claude Code requests through LiteLLM triggered (llama.cpp #27107). #}
++{%- set image_count = namespace(value=0) %}
++{%- set video_count = namespace(value=0) %}
++{%- macro render_content(content, do_vision_count, is_system_content=false) %}
++    {%- if content is string %}
++        {{- content }}
++    {%- elif content is iterable and content is not mapping %}
++        {%- for item in content %}
++            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}
++                {%- if is_system_content %}
++                    {{- raise_exception('System message cannot contain images.') }}
++                {%- endif %}
++                {%- if do_vision_count %}
++                    {%- set image_count.value = image_count.value + 1 %}
++                {%- endif %}
++                {%- if add_vision_id %}
++                    {{- 'Picture ' ~ image_count.value ~ ': ' }}
++                {%- endif %}
++                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}
++            {%- elif 'video' in item or item.type == 'video' %}
++                {%- if is_system_content %}
++                    {{- raise_exception('System message cannot contain videos.') }}
++                {%- endif %}
++                {%- if do_vision_count %}
++                    {%- set video_count.value = video_count.value + 1 %}
++                {%- endif %}
++                {%- if add_vision_id %}
++                    {{- 'Video ' ~ video_count.value ~ ': ' }}
++                {%- endif %}
++                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}
++            {%- elif 'text' in item %}
++                {{- item.text }}
++            {%- else %}
++                {{- raise_exception('Unexpected item type in content.') }}
++            {%- endif %}
++        {%- endfor %}
++    {%- elif content is none or content is undefined %}
++        {{- '' }}
++    {%- else %}
++        {{- raise_exception('Unexpected content type.') }}
++    {%- endif %}
++{%- endmacro %}
++{%- if not messages %}
++    {{- raise_exception('No messages provided.') }}
++{%- endif %}
++{%- set sysns = namespace(count=0, text='') %}
++{%- for message in messages %}
++    {%- if sysns.count == loop.index0 and (message.role == 'system' or message.role == 'developer') %}
++        {%- set sys_content = render_content(message.content, false, true)|trim %}
++        {%- if sys_content %}
++            {%- set sysns.text = sysns.text + ('\n' if sysns.text else '') + sys_content %}
++        {%- endif %}
++        {%- set sysns.count = sysns.count + 1 %}
++    {%- endif %}
++{%- endfor %}
++{%- set num_sys = sysns.count %}
++{%- set merged_system = sysns.text %}
++{%- set reasoning_instructions = '' %}
++{%- if enable_thinking is undefined or enable_thinking is true %}
++    {%- set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}
++    {%- if resolved_reasoning_effort == 'high' %}
++        {%- set resolved_reasoning_effort = 'xhigh' %}
++    {%- endif %}
++    {%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}
++        {{- raise_exception('Unexpected reasoning effort ' ~ reasoning_effort ~ '. Supported types are xhigh (default), medium, and low.') }}
++    {%- endif %}
++    {%- if resolved_reasoning_effort == 'xhigh' %}
++        {%- set reasoning_instructions = 'Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.' %}
++    {%- elif resolved_reasoning_effort == 'low' %}
++        {%- set reasoning_instructions = 'Reasoning effort is set to low. Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration.' %}
++    {%- endif %}
++{%- endif %}
++{%- if tools and tools is iterable and tools is not mapping %}
++    {{- '<|im_start|>system\n' }}
++    {%- if reasoning_instructions %}
++        {{- reasoning_instructions + '\n\n' }}
++    {%- endif %}
++    {{- "# Tools\n\nYou have access to the following functions:\n\n<tools>" }}
++    {%- for tool in tools %}
++        {{- "\n" }}
++        {{- tool | tojson }}
++    {%- endfor %}
++    {{- "\n</tools>" }}
++    {{- '\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n</parameter>\n<parameter=example_parameter_2>\nThis is the value for the second parameter\nthat can span\nmultiple lines\n</parameter>\n</function>\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\n- Required parameters MUST be specified\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\n</IMPORTANT>' }}
++    {%- if merged_system %}
++        {{- '\n\n' + merged_system }}
++    {%- endif %}
++    {{- '<|im_end|>\n' }}
++{%- else %}
++    {%- if merged_system %}
++        {{- '<|im_start|>system\n' + (reasoning_instructions + '\n\n' if reasoning_instructions else '')  + merged_system + '<|im_end|>\n' }}
++    {%- elif reasoning_instructions %}
++        {{- '<|im_start|>system\n' + reasoning_instructions + '<|im_end|>\n' }}
++    {%- endif %}
++{%- endif %}
++{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}
++{%- for message in messages[::-1] %}
++    {%- set index = (messages|length - 1) - loop.index0 %}
++    {%- if ns.multi_step_tool and message.role == "user" %}
++        {%- set content = render_content(message.content, false)|trim %}
++        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}
++            {%- set ns.multi_step_tool = false %}
++            {%- set ns.last_query_index = index %}
++        {%- endif %}
++    {%- endif %}
++{%- endfor %}
++{%- for message in messages %}
++    {%- if loop.index0 >= num_sys %}
++    {%- set content = render_content(message.content, true)|trim %}
++    {%- if message.role == "system" or message.role == "developer" %}
++        {{- '<|im_start|>system\n' + content + '<|im_end|>\n' }}
++    {%- elif message.role == "user" %}
++        {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>' + '\n' }}
++    {%- elif message.role == "assistant" %}
++        {%- set reasoning_content = '' %}
++        {%- if message.reasoning_content is string %}
++            {%- set reasoning_content = message.reasoning_content %}
++        {%- endif %}
++        {%- set reasoning_content = reasoning_content|trim %}
++        {%- if preserve_thinking is undefined or preserve_thinking is true or loop.index0 > ns.last_query_index %}
++            {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content + '\n</think>\n\n' + content }}
++        {%- else %}
++            {{- '<|im_start|>' + message.role + '\n' + content }}
++        {%- endif %}
++        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}
++            {%- for tool_call in message.tool_calls %}
++                {%- if tool_call.function is defined %}
++                    {%- set tool_call = tool_call.function %}
++                {%- endif %}
++                {%- if tool_call.name is not defined or tool_call.name is none %}
++                    {{- raise_exception('Tool call is missing a function name.') }}
++                {%- endif %}
++                {%- if loop.first %}
++                    {%- if content|trim %}
++                        {{- '\n\n<tool_call>\n<function=' + tool_call.name + '>\n' }}
++                    {%- else %}
++                        {{- '<tool_call>\n<function=' + tool_call.name + '>\n' }}
++                    {%- endif %}
++                {%- else %}
++                    {{- '\n<tool_call>\n<function=' + tool_call.name + '>\n' }}
++                {%- endif %}
++                {%- if tool_call.arguments is mapping %}
++                    {%- for args_name, args_value in tool_call.arguments|items %}
++                        {{- '<parameter=' + args_name + '>\n' }}
++                        {%- set args_value = args_value | string if args_value is string else args_value | tojson | safe %}
++                        {{- args_value }}
++                        {{- '\n</parameter>\n' }}
++                    {%- endfor %}
++                {%- elif tool_call.arguments is string %}
++                    {%- if tool_call.arguments|trim %}
++                        {{- raise_exception('Tool call arguments for function "' + (tool_call.name | string) + '" were passed as a JSON string. Parse them into an object before calling apply_chat_template.') }}
++                    {%- endif %}
++                {%- elif tool_call.arguments is defined and tool_call.arguments is not none %}
++                    {{- raise_exception('Tool call arguments for function "' + (tool_call.name | string) + '" must be an object/mapping or a JSON string.') }}
++                {%- endif %}
++                {{- '</function>\n</tool_call>' }}
++            {%- endfor %}
++        {%- endif %}
++        {{- '<|im_end|>\n' }}
++    {%- elif message.role == "tool" %}
++        {%- if loop.previtem and loop.previtem.role != "tool" %}
++            {{- '<|im_start|>user' }}
++        {%- endif %}
++        {{- '\n<tool_response>\n' }}
++        {{- content }}
++        {{- '\n</tool_response>' }}
++        {%- if not loop.last and loop.nextitem.role != "tool" %}
++            {{- '<|im_end|>\n' }}
++        {%- elif loop.last %}
++            {{- '<|im_end|>\n' }}
++        {%- endif %}
++    {%- else %}
++        {{- raise_exception('Unexpected message role.') }}
++    {%- endif %}
++    {%- endif %}
++{%- endfor %}
++{%- if add_generation_prompt %}
++    {{- '<|im_start|>assistant\n' }}
++    {%- if enable_thinking is defined and enable_thinking is false %}
++        {{- '<think>\n\n</think>\n\n' }}
++    {%- else %}
++        {{- '<think>\n' }}
++    {%- endif %}
++{%- endif %}
++{#- Unsloth fixes - developer role, merged system messages, tool calling #}
+\ No newline at end of file
+diff --git a/scripts/ai-down.ps1 b/scripts/ai-down.ps1
+index efc3629..9cc0f19 100644
+--- a/scripts/ai-down.ps1
++++ b/scripts/ai-down.ps1
+@@ -38,6 +38,7 @@ Stop-StackListener 4000 'router'
+ Stop-StackListener 8080 'llama-swap'
+ Stop-StackListener 10001 'llama-server' -GraceSec 5
+ Stop-StackListener 10002 'llama-server (q6)' -GraceSec 5
++Stop-StackListener 10003 'llama-server (qwen3.8)' -GraceSec 5
+ # launcher shims and strays from our install folder
+ Get-Process litellm, llama-swap, llama-server -ErrorAction SilentlyContinue |
+   Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |
+diff --git a/scripts/ai-up.ps1 b/scripts/ai-up.ps1
+index aa4d0d8..6dbc99e 100644
+--- a/scripts/ai-up.ps1
++++ b/scripts/ai-up.ps1
+@@ -12,6 +12,7 @@ param(
+   [switch]$Force,
+   [int]$MinFreeVramMiB = 22000,                 # model + 128K KV cache need about 21.6 GB (decision-004)
+   [int]$Q6MinFreeVramMiB = 28500,               # local-coder-q6 at 160K holds 27.7 GB (TASK-020): warn below this
++  [int]$Q38MinFreeVramMiB = 30200,              # local-coder-38 at 160K with MTP and 2 slots holds 29.4 GB (TASK-033)
+   [string]$GamePathPattern                      # override of the game-detection pattern (for tests)
+ )
+ $ErrorActionPreference = 'Stop'
+@@ -39,8 +40,9 @@ if ($swapUp -and $routerUp) {
+   "Stack is already running (llama-swap $swapUrl, router $routerUrl). Nothing started."
+   return
+ }
+-# llama-swap gives each model its own llama-server port from startPort: 10001 local-coder, 10002 local-coder-q6
+-if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001) -or (Get-Listener 10002)) {
++# llama-swap gives each model its own llama-server port from startPort: 10001 local-coder, 10002 local-coder-q6,
++# 10003 local-coder-38 (TASK-033 trial)
++if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001) -or (Get-Listener 10002) -or (Get-Listener 10003)) {
+   throw 'The stack is only partly running or a port is taken. Run scripts\ai-down.ps1, then start again.'
+ }
+ 
+@@ -56,12 +58,15 @@ if (-not $Force) {
+ # the Q6_K entry is optional: low VRAM only rules it out, so warn instead of refusing
+ if ($free -lt $Q6MinFreeVramMiB) {
+   Write-Warning "Only $free MiB of VRAM free: enough for local-coder, not for local-coder-q6 (about $Q6MinFreeVramMiB MiB). Free GPU memory before picking Local Coder Q6."
++} elseif ($free -gt $Q38MinFreeVramMiB) {
++  Write-Warning "Only $free MiB of VRAM free: not enough for local-coder-38 (about $Q38MinFreeVramMiB MiB). Free GPU memory before picking Local Coder 3.8."
+ }
+ 
+ # 4. start
+ $baseline = Get-VramUsedMiB
+ New-Item -ItemType Directory -Force (Join-Path $root 'logs'), (Join-Path $root 'run') | Out-Null
+ $env:LOCAL_AI_ROOT = $root
++$env:LOCAL_AI_REPO = $root   # config\llama-swap.yaml reads chat templates from the repo's config folder
+ try {
+   Start-Detached $swapExe @('-config', (Join-Path $repo 'config\llama-swap.yaml'), '-listen', '127.0.0.1:8080') `
+     (Join-Path $root 'logs\llama-swap.out.log') (Join-Path $root 'logs\llama-swap.err.log') | Out-Null
+diff --git a/scripts/versions.psd1 b/scripts/versions.psd1
+index 2071527..8f5f657 100644
+--- a/scripts/versions.psd1
++++ b/scripts/versions.psd1
+@@ -39,6 +39,13 @@
+       Size   = 22523238624
+       Sha256 = 'ec1805fe87e6519c461c1ed2d179865464a875ed241032ead65a354f979cfe14'
+     }
++    @{
++      Name   = 'local-coder-38'   # trial entry (TASK-033); carries the MTP head (blk.64.nextn.*)
++      File   = 'Qwen3.8-27B-UD-Q6_K.gguf'
++      Url    = 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q6_K.gguf'
++      Size   = 21983677344
++      Sha256 = 'c9c206812fbe4ac7b76a729e25928b63f2ae89d37f69da7a71c20aec763cd436'
++    }
+   )
+   MinCudaVersion = '12.8'
+   MinComputeCapability = '12.0'   # Blackwell (sm_120)

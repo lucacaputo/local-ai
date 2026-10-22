@@ -1,0 +1,6 @@
+In this repository:
+(1) Rename calcTotal in src/pricing.ts to subtotal and update every use in the code base and the tests. Keep calcTotal exported as an alias of subtotal, marked @deprecated.
+(2) Add src/coupon.ts exporting applyCoupon(total: number, code: string): number. SAVE10 takes 10% off; FLAT5 takes 5 off but never goes below 0. Codes are case-insensitive. Any other code throws an Error with the message "unknown coupon: <code>" (the code as given). Round the result to 2 decimals.
+(3) Add setCoupon(code: string) to Cart in src/cart.ts. It checks the code right away and throws for an unknown one, as above. Cart.total() applies the coupon to the subtotal.
+(4) summary in src/report.ts takes an optional coupon code as a second argument. With a coupon, the text is "<n> items, total <x> (coupon <CODE>)": the total after the coupon with 2 decimals, the code in upper case. Without one, the text stays as it is.
+(5) Add tests for all of this in the test folder. Then run npm test and make sure every test passes.

@@ -40,8 +40,8 @@ if ($swapUp -and $routerUp) {
   "Stack is already running (llama-swap $swapUrl, router $routerUrl). Nothing started."
   return
 }
-# llama-swap gives each model its own llama-server port from startPort: 10001 local-coder, 10002 local-coder-q6,
-# 10003 local-coder-38 (TASK-033 trial)
+# llama-swap gives each model its own llama-server port from startPort, in alphabetical order of the model names:
+# 10001 local-coder, 10002 local-coder-38 (TASK-033 trial), 10003 local-coder-q6
 if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001) -or (Get-Listener 10002) -or (Get-Listener 10003)) {
   throw 'The stack is only partly running or a port is taken. Run scripts\ai-down.ps1, then start again.'
 }

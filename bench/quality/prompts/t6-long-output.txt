@@ -1,0 +1,4 @@
+In this repository, add an in-memory inventory module:
+(1) Create src/inventory.ts with a class Inventory and about 400 lines of code in total: products with SKU, name, price, stock and tags; add, remove and update products; stock reservations that expire; restock with a history of stock movements; search by name, tag and price range; low-stock reports; CSV export and import; and input validation that throws clear errors. Give every exported function and method a JSDoc comment.
+(2) Create test/inventory.test.ts with at least 30 tests.
+Write each file in one go with a single Write call. Then run npm test and make sure every test passes.

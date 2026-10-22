@@ -1,0 +1,1 @@
+In this repository: (1) add an optional discountPercent field (0 to 100) to Item in src/pricing.ts and apply it in calcTotal; throw a RangeError when it is outside 0 to 100. (2) Add a count() method to Cart in src/cart.ts that returns the total quantity of all items. (3) Add tests for both in the test folder. Then run npm test and make sure every test passes.
