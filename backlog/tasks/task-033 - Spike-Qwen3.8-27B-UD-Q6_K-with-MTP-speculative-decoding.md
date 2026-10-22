@@ -1,11 +1,11 @@
 ---
 id: TASK-033
 title: 'Spike: Qwen3.8-27B UD-Q6_K with MTP speculative decoding'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-21 20:45'
-updated_date: '2026-10-22 05:11'
+updated_date: '2026-10-22 05:12'
 labels: []
 milestone: m-4
 dependencies: []
@@ -72,3 +72,9 @@ Results in doc-002 section "Qwen3.8 with MTP, trial entry (TASK-033, m-4)". Wait
 
 User decision (2026-10-22): keep 2 slots (--parallel 2 -kvu) and the 160K window; the trial entry already runs this setup, so no config change.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Qwen3.8-27B UD-Q6_K with MTP speculative decoding (draft 3) is in the stack as the trial entry local-coder-38: 160K window, 2 slots, about 31.0 GB VRAM. Output speed is about 150 tok/s on short answers and 79 tok/s at a full 160K prompt, against 62 and 41 for Qwen3.6 Q6_K; prompt processing is about the same. Claude Code ran ts-demo through the router on it in 74 s with 12 tool calls, no tool errors and 7/7 tests. The GGUF's chat template rejected a later system message (llama.cpp #27107), so config/qwen3.8-chat-template.jinja holds a patched copy and ai-up sets LOCAL_AI_REPO for it. ai-up warns below 30,200 MiB free and ai-down stops port 10003. Benchmarks are in doc-002. Follow-ups: quality check against Qwen3.6 (TASK-034) before it replaces anything; the trial entry has not been tried from the Mac yet.
+<!-- SECTION:FINAL_SUMMARY:END -->
