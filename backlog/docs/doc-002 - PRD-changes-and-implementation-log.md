@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-21 17:23'
+updated_date: '2026-10-21 22:03'
 ---
 # PRD changes and implementation log
 
@@ -348,3 +348,45 @@ The user ran the plan from the Mac on another network on 2026-10-21 and reported
 | `ai-remote.sh down` | Control log 16:58:41: `POST /down 200`, tailnet publishing, router and llama-swap stopped. Status then showed the stack down (user report). Checked at the PC afterwards: VRAM 1,607 MiB, `tailscale serve` publishes only `/control` |
 | Errors seen by the router, not visible to the user | 29 x 429 from api.anthropic.com (subscription rate limit; Claude Code retries these). 8 x 500 on `/v1/messages/count_tokens` for local models: LiteLLM's token counter fails on some tool schemas (`KeyError: 'items'`) and llama-swap has no `/v1/responses/input_tokens` (404) |
 | Not tested | A PC that is really asleep (sleep on AC was set to never for the run; Wake-on-LAN is out of scope) |
+
+## Qwen3.8 with MTP, trial entry (TASK-033, m-4)
+
+`local-coder-38` serves unsloth `Qwen3.8-27B-UD-Q6_K.gguf` (21,983,677,344 bytes, SHA-256 in `scripts/versions.psd1`) with MTP speculative decoding: `--spec-type draft-mtp --spec-draft-n-max 3`, draft KV cache q8_0, 160K window, `--parallel 2 -kvu`, port 10003. The MTP head is inside the GGUF (`blk.64.nextn.*`); the Qwen3.6 GGUFs have none. Qwen/Qwen3.8-27B `config.json` is identical to Qwen3.6-27B's, so the pinned llama.cpp b11719 runs it unchanged. The Qwen3.6 entries are unchanged.
+
+Measured against a bench llama-swap (`D:\local-ai\scratch\q38`), unlike TASK-020 with real Python source as the long prompt (LiteLLM's proxy package) and a ~1,200-token code answer, Qwen's thinking sampling (temperature 1.0, top_p 0.95, top_k 20), median of 3 for short prompts. VRAM includes the desktop (about 1.6 GB idle, 32,607 MiB total).
+
+| Setup, 160K | VRAM, model loaded | Generation: short / 94K / 161K prompt (tok/s) | MTP acceptance | Main answer / second request arriving 3 s later |
+|---|---|---|---|---|
+| Qwen3.6 Q6_K, 2 slots (local-coder-q6) | 29,438-29,487 MiB | 61.9 / 47.5 / 40.8 | - | 21.8 s / 3.8 s |
+| Qwen3.8, no MTP, 2 slots | 28,516 MiB | 63.5 / 49.1 / 41.7 | - | 22.5 s / 3.1 s |
+| Qwen3.8, no MTP, 1 slot | 28,372 MiB | 64.5 / 49.7 / - | - | 23.1 s / 20.1 s |
+| Qwen3.8, draft 2, 1 slot | 30,229-30,263 MiB | 131.3 / 86.0 / 67.0 | 0.85-0.88 | 13.5 s / 10.5 s |
+| Qwen3.8, draft 2, 2 slots | 30,677-30,709 MiB | 132.1 / 87.5 / - | 0.88 | 15.7 s / 4.5 s |
+| Qwen3.8, draft 3, 1 slot | 30,379-30,413 MiB | 149.0 / 100.7 / 80.7 | 0.79-0.83 | 12.1 s / 9.0 s |
+| **Qwen3.8, draft 3, 2 slots (trial entry)** | 30,833-31,001 MiB | 152.7 / 91.6 / 78.8 | 0.70-0.83 | 15.4 s / 4.9 s |
+| Qwen3.8, draft 4, 1 slot | 30,424-30,529 MiB | 157.0 / 104.5 / 79.0 | 0.69-0.76 | 11.9 s / 8.9 s |
+| Qwen3.8, draft 4, 2 slots | 31,138-31,168 MiB | 155.3 / 103.5 / - | 0.73-0.75 | 10.5 s / 3.5 s |
+
+Prompt processing: Qwen3.6 2,075 tok/s at 98K and 1,571 at 161K; Qwen3.8 without MTP 2,179 and 1,610; with MTP about 5% lower (2,039-2,078 at 94K, 1,510-1,535 at 161K). Thinking output (reasoning_effort low) speeds up like code: 132, 147 and 156 tok/s at drafts 2, 3 and 4. Draft 3 was chosen: as fast as 4 at a full prompt, with higher acceptance there (0.83 vs 0.69).
+
+| Window, draft 3 | VRAM | Free | Near-full prompt |
+|---|---|---|---|
+| 128K, 1 slot | 28,770-28,794 MiB | 3.8 GB | 129,485 tokens: pp 1,726, tg 87.0 tok/s |
+| 128K, 2 slots | 29,368-29,392 MiB | 3.2 GB | 129,486 tokens: tg 85.1 tok/s |
+| 160K, 1 slot | 30,379-30,413 MiB | 2.2 GB | 161,492 tokens: tg 80.7 tok/s |
+| **160K, 2 slots** | 30,833-31,001 MiB | 1.6 GB | 161,497 tokens: pp 1,535, tg 78.8 tok/s |
+| 192K, 1 slot | 31,722-31,746 MiB | 0.9 GB | 194,730 tokens: pp 1,367, tg 70.4 tok/s |
+
+160K is the largest window that leaves about 1.5 GB for the desktop; 192K leaves 0.9 GB. Every setup stays far above N1 (about 40 tok/s) at a full prompt. ai-up warns below 30,200 MiB free that local-coder-38 will not fit.
+
+**Slot count, for the user.** One slot is about 10% faster at a 94K prompt (100.7 vs 91.6 tok/s) and uses 0.4-0.6 GB less VRAM. Two slots let a second request in at once: it took 4.9 s instead of 9.0 s, while the main answer took 15.4 s instead of 12.1 s. Second requests come from subagents or a second session (Claude Code's own background calls go to Haiku, TASK-005). The trial entry runs two slots, as today.
+
+**Chat template.** The GGUF ships unsloth's template, not Qwen's: it merges leading system/developer messages and drops the "No user query found" assertion, but still raises "System message must be at the beginning." for a later system message. Claude Code through LiteLLM hit it on the first request (500 from the router, llama.cpp #27107). `config/qwen3.8-chat-template.jinja` is that template with one change: such a message is rendered as its own system turn (the Qwen3.6 unsloth template silently drops it instead). llama-swap passes it with `--chat-template-file ${env.LOCAL_AI_REPO}\config\...`; ai-up sets `LOCAL_AI_REPO`.
+
+| Check | Result |
+|---|---|
+| Install | `install.ps1` downloaded and hash-verified the file; `-CheckOnly` lists all three models [ok] |
+| ts-demo (discountPercent with RangeError, `Cart.count()`, tests, `npm test`) through the router with `claude -p` on the PC | Done in 74 s, 12 tool calls, no tool errors and no wrong-path first Read; edits correct; 7/7 tests pass. The prompt is kept at `D:\local-ai\scratch\q38\tsdemo-prompt.txt` for TASK-034 |
+| Ports and stack scripts | llama-swap gives the entry port 10003; the ai-up pre-check and ai-down cover it |
+
+Not tested here: the Mac (needs the pushed config), quality beyond one ts-demo run and the reported long-thinking loops (TASK-034), OpenCode (TASK-035).

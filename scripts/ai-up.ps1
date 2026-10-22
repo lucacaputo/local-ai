@@ -12,6 +12,7 @@ param(
   [switch]$Force,
   [int]$MinFreeVramMiB = 22000,                 # model + 128K KV cache need about 21.6 GB (decision-004)
   [int]$Q6MinFreeVramMiB = 28500,               # local-coder-q6 at 160K holds 27.7 GB (TASK-020): warn below this
+  [int]$Q38MinFreeVramMiB = 30200,              # local-coder-38 at 160K with MTP and 2 slots holds 29.4 GB (TASK-033)
   [string]$GamePathPattern                      # override of the game-detection pattern (for tests)
 )
 $ErrorActionPreference = 'Stop'
@@ -39,8 +40,9 @@ if ($swapUp -and $routerUp) {
   "Stack is already running (llama-swap $swapUrl, router $routerUrl). Nothing started."
   return
 }
-# llama-swap gives each model its own llama-server port from startPort: 10001 local-coder, 10002 local-coder-q6
-if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001) -or (Get-Listener 10002)) {
+# llama-swap gives each model its own llama-server port from startPort: 10001 local-coder, 10002 local-coder-q6,
+# 10003 local-coder-38 (TASK-033 trial)
+if ($swapUp -or $routerUp -or (Get-Listener 8080) -or (Get-Listener 4000) -or (Get-Listener 10001) -or (Get-Listener 10002) -or (Get-Listener 10003)) {
   throw 'The stack is only partly running or a port is taken. Run scripts\ai-down.ps1, then start again.'
 }
 
@@ -56,12 +58,15 @@ if (-not $Force) {
 # the Q6_K entry is optional: low VRAM only rules it out, so warn instead of refusing
 if ($free -lt $Q6MinFreeVramMiB) {
   Write-Warning "Only $free MiB of VRAM free: enough for local-coder, not for local-coder-q6 (about $Q6MinFreeVramMiB MiB). Free GPU memory before picking Local Coder Q6."
+} elseif ($free -lt $Q38MinFreeVramMiB) {
+  Write-Warning "Only $free MiB of VRAM free: not enough for local-coder-38 (about $Q38MinFreeVramMiB MiB). Free GPU memory before picking Local Coder 3.8."
 }
 
 # 4. start
 $baseline = Get-VramUsedMiB
 New-Item -ItemType Directory -Force (Join-Path $root 'logs'), (Join-Path $root 'run') | Out-Null
 $env:LOCAL_AI_ROOT = $root
+$env:LOCAL_AI_REPO = $repo   # config\llama-swap.yaml reads chat templates from the repo's config folder
 try {
   Start-Detached $swapExe @('-config', (Join-Path $repo 'config\llama-swap.yaml'), '-listen', '127.0.0.1:8080') `
     (Join-Path $root 'logs\llama-swap.out.log') (Join-Path $root 'logs\llama-swap.err.log') | Out-Null

@@ -15,6 +15,11 @@
         "model": "local-coder-q6",
         "label": "Local Coder Q6",
         "description": "Qwen3.6 27B Q6_K, larger window; swapping with Local Coder takes a few seconds"
+      },
+      {
+        "model": "local-coder-38",
+        "label": "Local Coder 3.8",
+        "description": "Qwen3.8 27B Q6 with MTP, trial; about twice as fast, 160K window"
       }
     ]
   },

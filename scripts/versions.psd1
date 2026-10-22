@@ -39,6 +39,13 @@
       Size   = 22523238624
       Sha256 = 'ec1805fe87e6519c461c1ed2d179865464a875ed241032ead65a354f979cfe14'
     }
+    @{
+      Name   = 'local-coder-38'   # trial entry (TASK-033); carries the MTP head (blk.64.nextn.*)
+      File   = 'Qwen3.8-27B-UD-Q6_K.gguf'
+      Url    = 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q6_K.gguf'
+      Size   = 21983677344
+      Sha256 = 'c9c206812fbe4ac7b76a729e25928b63f2ae89d37f69da7a71c20aec763cd436'
+    }
   )
   MinCudaVersion = '12.8'
   MinComputeCapability = '12.0'   # Blackwell (sm_120)
