@@ -1,11 +1,11 @@
 ---
 id: TASK-034
 title: 'Quality check: Qwen3.8 vs Qwen3.6 on our own task set'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-21 20:45'
-updated_date: '2026-10-22 21:25'
+updated_date: '2026-10-22 21:31'
 labels: []
 milestone: m-4
 dependencies:
