@@ -30,7 +30,7 @@ SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 ROOT = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LOCAL_AI_ROOT", r"D:\local-ai")
 LOG = os.path.join(ROOT, "logs", "control.log")
 ALLOWED_TTL, ALLOWED_RETRY = 60, 5   # seconds between re-reads of the allowlist: while it has logins / while empty
-MODEL_PORTS = {10001: "local-coder", 10002: "local-coder-38", 10003: "local-coder-q6"}   # llama-server ports from config\llama-swap.yaml (alphabetical)
+MODEL_PORTS = {10001: "local-coder"}   # llama-server port from config\llama-swap.yaml (one model)
 
 _action_lock = threading.Lock()
 _running = None   # "up" / "down" while one runs

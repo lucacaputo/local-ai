@@ -1,7 +1,7 @@
 # TASK-034: the whole quality set, model by model (so llama-swap swaps once per model), each task $Reps times.
-#   bench\quality\run-all.ps1 [-Models local-coder-q6,local-coder-38] [-Tasks t1,...] [-Reps 2] [-Client opencode] [-Out ...]
+#   bench\quality\run-all.ps1 [-Models local-coder] [-Tasks t1,...] [-Reps 2] [-Client opencode] [-Out ...]
 param(
-  [string[]]$Models = @('local-coder-q6', 'local-coder-38'),
+  [string[]]$Models = @('local-coder'),   # TASK-034 compared local-coder-q6 and local-coder-38, replaced by it in TASK-036
   [string[]]$Tasks = @('t1', 't2', 't3', 't4', 't5', 't6', 't6c'),
   [int]$Reps = 2,
   [string]$Out = 'D:\local-ai\scratch\quality\runs',

@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-23 05:17'
+updated_date: '2026-10-23 06:13'
 ---
 # PRD changes and implementation log
 
@@ -40,9 +40,9 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | S2 (`/model` list, window, compaction) | Pass with 128K (TASK-004); `modelPicker` rows, discovery not needed |
 | S3 (Blackwell, N1) | Pass: 65/65 layers on GPU, 63-77 tok/s (TASK-002) |
 | S4 (multi-step tool use) | Pass directly and via the router; tool-call error rate not measured against the R4 gate, see "Open items after m-2" (TASK-002, TASK-003) |
-| O4 context size | Resolved: 128K for the Q4_K_M entries, 160K for `local-coder-q6` (TASK-020) |
+| O4 context size | Resolved: 160K for the one local entry, `local-coder` (decision-009, TASK-036); earlier 128K for the Q4_K_M entries and 160K for `local-coder-q6` (TASK-020) |
 | O1 alternative harness | Resolved: OpenCode for local models, Claude Code for Claude models (TASK-035, user 2026-10-23); it met the bar on tool failures, not on pass rate |
-| O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Qwen3.6 27B, alias. The Q6_K quant of the same model was added as `local-coder-q6` (TASK-020); Qwen3.8 proposed to replace it (TASK-034, TASK-036) |
+| O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Qwen3.6 27B, alias. The Q6_K quant of the same model was added as `local-coder-q6` (TASK-020); replaced by Qwen3.8 UD-Q6_K with MTP as the only local model (decision-009, TASK-036) |
 | O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and per-model `modelSettings.<model>.autoCompactWindow` when local models have different windows (TASK-020) |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
 | O7 secret store | Resolved: Windows Credential Manager, since the 1Password CLI was not installed (decision-001); rotation tested on the PC and the Mac (TASK-017) |
@@ -488,3 +488,38 @@ All six compactions produced a summary and the work went on; the empty summary o
 5. A first check on the Mac: the interactive interface, the model picker, permission prompts (the runs here used `--auto`), and the reasoning shown while the model thinks.
 
 Not tested: OpenCode's interactive interface on either machine, its LSP and formatter integrations, long real sessions, and more than one run per compaction case.
+
+## decision-009: Qwen3.8 as the only local model, medium effort (TASK-036, m-4)
+
+**Context.** TASK-034 found Qwen3.8 27B UD-Q6_K with MTP the better coding agent (tool-call failures 2.2% against 19%, the same pass rate, about twice the generation speed) but slow on long tasks, because it thinks at its template's default effort, xhigh. The user chose to replace Qwen3.6 with it, after a re-run of t1-t3 and t6 at a lower effort, and to keep one local entry under the existing name (2026-10-23). TASK-035 made OpenCode the client for local models; Claude Code stays for Claude models and as a fallback.
+
+**Effort re-run** (Qwen3.8, OpenCode, `reasoningEffort` set per run; two runs each; xhigh from TASK-035):
+
+| Effort | t1, t2, t6 pass | Time, t1-t3 and t6 | Output tokens | Reasoning characters | Requests at the 32K cap |
+|---|---|---|---|---|---|
+| medium | 6/6 | 16.4 min | 111,020 | 207,420 | 0 |
+| "high" (rendered as xhigh, see below) | 5/6 | 19.5 min | 135,846 | 327,397 | 1: t6 run 2 thought 28K tokens before the first Write, hit the cap, and `opencode run` ended with no file |
+| xhigh (template default) | 6/6 | 34.7 min | 217,060 | 494,851 | 1 |
+
+t6 took 365 / 375 s at medium against 528 / 1,276 s at xhigh, with 41-47 tests and 452 lines. t3 returned no answer at every effort: the control-token stop described in the TASK-035 section, not an effort effect. t5 (the logic puzzle, the hardest thinking task) passed 2/2 at medium in 83 / 47 s. The template knows only low, medium and xhigh: `high` is mapped to xhigh, and any other value raises an error. Low was tried once on t5 (TASK-035, correct) and not on the coding tasks.
+
+**Decision.** One local entry, `local-coder` (with `local-light` as its alias): Qwen3.8-27B-UD-Q6_K.gguf, MTP draft 3 with q8_0 draft cache, 160K context, 2 slots with `-kvu`, the patched chat template (TASK-033), and reasoning effort medium when a request does not name one. `local-coder-q6` and `local-coder-38` are removed, and both Qwen3.6 files leave the model list; the files stay on disk until the user deletes them. Supersedes decision-004 (128K).
+
+**Consequences.**
+
+- The default is set in `config/llama-swap.yaml` as `env: LLAMA_ARG_CHAT_TEMPLATE_KWARGS={"reasoning_effort":"medium"}`. As a `--chat-template-kwargs '{...}'` argument it failed: llama-swap on Windows passes the single quotes through and llama-server rejects the JSON. Checked with `/apply-template`: no effort renders the medium prompt (no reasoning line), a request's `reasoning_effort` low or xhigh, or its `chat_template_kwargs`, overrides it.
+- Claude Code gets medium too: it cannot name an effort through the router, and a request without one gets the default on both llama-server routes. Measured by prompt length on `/v1/chat/completions` and `/v1/responses` alike: no effort 13 tokens, medium 13, low 43, xhigh 55. On t5 in Claude Code that did not show as less thinking (10,253 output tokens against 14,652 / 9,309 at xhigh in TASK-034); the puzzle thought about as much at medium in OpenCode too.
+- VRAM: the model needs about 29.4 GB. `ai-up` still refuses below 22,000 MiB free (game guard, decision-007) and now warns below 30,200 MiB that the model will spill and run slowly. The idle desktop leaves 30,455 MiB free, so a GPU-hungry app open next to it brings the warning.
+- One llama-server port, 10001: `ai-up`'s port check, `ai-down` and the control service's status cover only that one.
+- Load time 12.3 s (`ai-up -Warm`, warm file cache).
+- Claude Code: the picker lists Local Coder and Local Light; `modelSettings` is gone, since every local model now has the 160K window of `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
+- `config/opencode.json` now names `local-coder`; `local-light`, the per-model effort and the launchers are TASK-038.
+
+| Check | Result |
+|---|---|
+| `install.ps1 -CheckOnly` | Everything in place; model Qwen3.8-27B-UD-Q6_K.gguf for local-coder (20.5 GiB) [ok] |
+| ts-demo (t1) and t5 through the router from the PC | Claude Code on local-coder: pass in 53 s, 11 tool calls, no failures, first prompt 21,210 tokens. OpenCode on local-coder: pass in 24 s, 13 tool calls, no failures, first prompt 10,911. t5 in Claude Code: pass in 89 s |
+| Local Light and a Claude model, Claude Code through the router | local-light answered (served by the local-coder process); Sonnet answered |
+| Control service over the tailnet (restarted) | `/control/status`: stack up, `model_loaded` local-coder |
+| `ai-up` thresholds (raised for the test, 30,455 MiB free) | Warning threshold raised: starts and warns; refusal threshold raised: "Not starting: only 30455 MiB of VRAM free"; normal start healthy in 13.7 s |
+| From the Mac | Not run yet (needs the user) |

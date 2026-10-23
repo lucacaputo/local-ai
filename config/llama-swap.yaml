@@ -12,53 +12,34 @@ macros:
   llama-server: >
     ${env.LOCAL_AI_ROOT}\bin\llama.cpp-b11719\llama-server.exe
     --host 127.0.0.1 --port ${PORT}
-  # 128K context, decision-004. Keep in sync with modelSettings.local-coder/local-light.autoCompactWindow
-  # in claude-settings.json.
-  ctx: 131072
-  # Q6_K window (TASK-020). Keep in sync with CLAUDE_CODE_MAX_CONTEXT_TOKENS in claude-settings.json.
-  ctx-q6: 163840
+  # 160K context (TASK-020, TASK-036). Keep in sync with CLAUDE_CODE_MAX_CONTEXT_TOKENS in claude-settings.json
+  # and the context limit in opencode.json.
+  ctx: 163840
 
 models:
+  # Qwen3.8 27B UD-Q6_K with MTP speculative decoding; the MTP head is inside the GGUF (TASK-033, TASK-036).
+  # Draft 3 measured 149 tok/s short and 79 tok/s at a full 160K prompt (Qwen3.6 Q6_K: 62 / 41); 29.4 GB of VRAM.
   "local-coder":
     name: "Local Coder"
-    description: "Qwen3.6 27B Q4_K_M, coding and agentic edits"
+    description: "Qwen3.8 27B UD-Q6_K with MTP, coding and agentic edits"
     # unload the weights after 5 minutes without requests (PRD F5)
     ttl: 300
-    # local-light starts as an alias of the coder (PRD F2, O3)
+    # local-light is an alias of the coder (PRD F2, O3)
     aliases:
       - "local-light"
+    # Default thinking effort when the request names none (the template's own default is xhigh). Medium passed the
+    # TASK-034 tasks in about half the time of xhigh, with no answer cut at the output cap (TASK-036). Claude Code's
+    # requests never name one through the router; OpenCode can set it per model. Set as an environment variable:
+    # on Windows llama-swap passes quotes in cmd through, so a JSON argument does not survive there.
+    env:
+      - 'LLAMA_ARG_CHAT_TEMPLATE_KWARGS={"reasoning_effort":"medium"}'
     cmd: |
       ${llama-server}
-      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.6-27B-Q4_K_M.gguf
+      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.8-27B-UD-Q6_K.gguf
       --jinja -c ${ctx} -ngl 99 -fa on
       # 2 slots: a background request no longer waits behind a long generation (TASK-005 measurement)
       --parallel 2 -kvu
       --cache-type-k q8_0 --cache-type-v q8_0
-
-  # Same model at Q6_K with a larger window (TASK-020). It does not fit in VRAM next to local-coder:
-  # llama-swap runs one model at a time, so picking it unloads local-coder first (and the reverse).
-  "local-coder-q6":
-    name: "Local Coder Q6"
-    description: "Qwen3.6 27B Q6_K, larger window"
-    ttl: 300
-    cmd: |
-      ${llama-server}
-      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.6-27B-Q6_K.gguf
-      --jinja -c ${ctx-q6} -ngl 99 -fa on
-      --parallel 2 -kvu
-      --cache-type-k q8_0 --cache-type-v q8_0
-
-  # Trial (TASK-033): Qwen3.8 with MTP speculative decoding; the MTP head is inside the GGUF.
-  # Draft 3 measured 149 tok/s short and 79 tok/s at a full 160K prompt (Qwen3.6 Q6_K: 62 / 41), using about 1.5 GB more VRAM.
-  "local-coder-38":
-    name: "Local Coder 3.8"
-    description: "Qwen3.8 27B UD-Q6_K with MTP, trial"
-    ttl: 300
-    cmd: |
-      ${llama-server}
-      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.8-27B-UD-Q6_K.gguf
-      --jinja -c ${ctx-q6} -ngl 99 -fa on
-      --parallel 2 -kvu
-      --cache-type-k q8_0 --cache-type-v q8_0
       --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-type-k q8_0 --spec-draft-type-v q8_0
+      # unsloth's template with one change: a later system message gets its own turn instead of an error (TASK-033)
       --chat-template-file ${env.LOCAL_AI_REPO}\config\qwen3.8-chat-template.jinja

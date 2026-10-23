@@ -8,26 +8,24 @@ Claude Code (PC or Mac)
      auth: a remote device's Tailscale login (allowlist), or the router key on the PC
        |- claude models (anthropic/*)  -> api.anthropic.com, on your subscription login
        |- local-coder, local-light     -> llama-swap 127.0.0.1:8080 -> llama-server 127.0.0.1:10001
-       |                                  (Qwen3.6 27B Q4_K_M, 128K context, unloads after 5 min idle)
-       |- local-coder-q6               -> llama-swap 127.0.0.1:8080 -> llama-server 127.0.0.1:10003
-                                          (same model at Q6_K, 160K context, unloads after 5 min idle)
+                                          (Qwen3.8 27B UD-Q6_K with MTP, 160K context, unloads after 5 min idle)
 
 ai-remote.sh (Mac)
   -> control service, 127.0.0.1:4100, published as .../control on the same port -> ai-up / ai-down
 ```
 
-`local-light` is an alias of `local-coder` (same process, same weights). `local-coder-q6` is the higher-quality Q6_K quant of the same model with a larger window: about 15-20% slower, and it cannot share VRAM with `local-coder`, so llama-swap unloads one to load the other (TASK-020). The bake-off in the PRD was skipped, so there is no `bench/` folder.
+`local-light` is an alias of `local-coder` (same process, same weights). The model is Qwen3.8 27B at UD-Q6_K with MTP speculative decoding (draft 3) and a patched chat template; it replaced Qwen3.6 (Q4_K_M and Q6_K entries) after the quality check in `bench/quality/` (TASK-033, TASK-034, TASK-036). It thinks before answering; the default reasoning effort is medium (set in `config/llama-swap.yaml`; the template knows low, medium and xhigh), which a request can override.
 
 Background and the reasons behind each choice: the PRD (`backlog/docs/doc-0001-PRD.md`), what changed from it (`backlog/docs/doc-002 - PRD-changes-and-implementation-log.md`) and `backlog/decisions/`.
 
 ## Requirements
 
-Windows 11, an NVIDIA GPU with about 24 GB of free VRAM for `local-coder` and about 28.5 GB for `local-coder-q6` (with their caches they use 21.4 GB and 27.7 GB; built and measured on a 32 GB RTX 5090), a current NVIDIA driver (CUDA 12.8 or newer, compute capability 12.0), PowerShell 5.1, and a Claude subscription logged in to Claude Code. `install.ps1` installs everything else.
+Windows 11, an NVIDIA GPU with about 30 GB of free VRAM for `local-coder` (with its caches and the MTP draft it uses 29.4 GB; built and measured on a 32 GB RTX 5090), a current NVIDIA driver (CUDA 12.8 or newer, compute capability 12.0), PowerShell 5.1, and a Claude subscription logged in to Claude Code. `install.ps1` installs everything else.
 
 ## Install (once)
 
 ```powershell
-scripts\install.ps1            # binaries, LiteLLM venv, both models (16 GB and 21 GB), all hash-verified
+scripts\install.ps1            # binaries, LiteLLM venv, the model (22 GB), all hash-verified
 scripts\install.ps1 -CheckOnly # report what is present or missing, change nothing (exit 2 if work is needed)
 scripts\init-secrets.ps1       # create the router key in Windows Credential Manager
 scripts\install-control.ps1    # optional: control service at logon, to start and stop the stack from other devices
@@ -45,11 +43,10 @@ scripts\claude-local.ps1   # Claude Code against the local router; all arguments
 scripts\ai-down.ps1        # stop everything and free the GPU (VRAM goes back to idle in a few seconds)
 ```
 
-- `ai-up -Warm` loads `local-coder` immediately; otherwise the first local request loads its model (about 10 s, 18 s for the Q6_K).
-- Switching between Local Coder and Local Coder Q6 reloads the model: the first answer after a switch takes about 12-13 s. Local Light shares Local Coder's process, so it switches instantly. Two sessions on different local models make llama-swap swap on every request.
+- `ai-up -Warm` loads `local-coder` immediately; otherwise the first local request loads the model (about 12 s). Local Light shares Local Coder's process, so switching between them is instant.
 - `ai-up -NoTailnet` keeps the router on loopback only. `ai-up -Force` skips the game guard (at the PC only).
 - The AI stack never starts by itself: not at boot, and the control service (if installed) starts it only when asked. The model unloads by itself after 300 s without requests; `ai-down` also stops the processes.
-- In Claude Code, `/model` lists the Claude models plus Local Coder, Local Light and Local Coder Q6.
+- In Claude Code, `/model` lists the Claude models plus Local Coder and Local Light.
 - From a Mac: `scripts/mac/ai-remote.sh up` (or `status`, `down`) starts the stack without being at the PC, and `scripts/mac/claude-local.sh` runs Claude Code against it. Neither needs the key. Setup: [docs/remote-client-macos.md](docs/remote-client-macos.md).
 
 **From WSL.** The scripts are Windows PowerShell 5.1 and use Credential Manager, so launch them through `powershell.exe` rather than running anything WSL-side:
@@ -71,7 +68,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-down.ps1
 | Repo (scripts, configs, backlog) | this folder |
 | Binaries (llama.cpp, llama-swap) | `D:\local-ai\bin\` |
 | LiteLLM venv | `D:\local-ai\litellm-venv\` |
-| Models | `D:\local-ai\models\Qwen3.6-27B-Q4_K_M.gguf` (local-coder, local-light), `Qwen3.6-27B-Q6_K.gguf` (local-coder-q6) |
+| Models | `D:\local-ai\models\Qwen3.8-27B-UD-Q6_K.gguf` (local-coder, local-light). The Qwen3.6 files of earlier installs are no longer used and can be deleted |
 | Logs | `D:\local-ai\logs\` (`llama-swap.*.log`, `litellm.*.log`, `control.*.log`; `.out` and `.err`), and `control.log`, one line per control request |
 | Run state | `D:\local-ai\run\stack.json` (written by `ai-up`, removed by `ai-down`) |
 | Router key | Credential Manager, target `local-ai/router-key`; used on the PC only |
@@ -93,7 +90,7 @@ The source of truth is `scripts/versions.psd1`. These passed the acceptance runs
 | LiteLLM | 1.106.0 (Python 3.12) |
 | uv | 0.13.1 |
 | Tailscale | 1.104.1 |
-| Models | Qwen3.6-27B-Q4_K_M.gguf and Qwen3.6-27B-Q6_K.gguf (unsloth) |
+| Models | Qwen3.8-27B-UD-Q6_K.gguf (unsloth) |
 | NVIDIA driver | 617.42 (not installed by the scripts) |
 | Claude Code | 2.1.302 (client, not pinned) |
 
@@ -103,24 +100,25 @@ Changing a pin means changing the version and the hash in `versions.psd1`, rerun
 
 | Symptom | Cause and fix |
 |---|---|
-| `ai-up` says "Not starting: game process running" or "only N MiB of VRAM free" | The game guard (decision-007). Close the game, or at the PC use `-Force` knowing the model needs about 22 GB free. The path check only knows the usual game library folders; the free-VRAM check is the hard one. |
-| `ai-up` warns "enough for local-coder, not for local-coder-q6" | Less than 28,500 MiB of VRAM is free. The stack starts; Local Coder works, but Local Coder Q6 would spill into system memory and slow down. Close GPU-heavy apps before picking it. |
-| `ai-up` says "partly running or a port is taken" | Run `scripts\ai-down.ps1`, then `ai-up` again. A foreign process on 4000, 8080 or 10001-10003 is reported and left alone; stop it yourself. |
+| `ai-up` says "Not starting: game process running" or "only N MiB of VRAM free" | The game guard (decision-007): a game process, or less than 22,000 MiB free. Close the game, or at the PC use `-Force` knowing the model needs about 30 GB free. The path check only knows the usual game library folders; the free-VRAM check is the hard one. |
+| `ai-up` warns "local-coder needs about 30200 MiB and will run slowly" | Between 22,000 and 30,200 MiB of VRAM is free. The stack starts, but part of the model would spill into system memory and slow down. Close GPU-heavy apps before using it. |
+| `ai-up` says "partly running or a port is taken" | Run `scripts\ai-down.ps1`, then `ai-up` again. A foreign process on 4000, 8080 or 10001 is reported and left alone; stop it yourself. |
 | `ai-up` says "Missing ... Run scripts\install.ps1" or "No router key yet" | Run `install.ps1` or `init-secrets.ps1`. |
 | Start fails with a health-check error | Read `D:\local-ai\logs\llama-swap.err.log` or `litellm.err.log`. `ai-up` cleans up after a failed start. |
-| Claude Code fails on a large prompt with `exceed_context_size_error` | llama-server must run with `-kvu` next to `--parallel 2`. Without it each of the 2 slots gets only half of the 128K context, 64K, less than Claude Code's own prompt (about 67K). It is in `config/llama-swap.yaml`; keep it if you edit the flags. |
-| A server context and the Claude Code window disagree | Claude Code must never assume more than the server holds. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (one value for every local model) matches the largest server, `ctx-q6` (163840); `modelSettings.local-coder` and `local-light` set `autoCompactWindow` to `ctx` (131072). Change them together with the macros in `config/llama-swap.yaml`. |
-| "Prompt is too long" or a 400 `ContextWindowExceededError` after many parallel Reads | Several large tool results in one turn can overflow the window before compaction runs. `config/claude-settings.json` caps each Read at 8000 tokens and compacts at 80% of the window minus 20K (local-coder at about 89K, local-coder-q6 at about 115K). 8 parallel full Reads pass on both; 16 (about 128K tokens in one step) end the turn with this error at any percentage (TASK-020), and Claude Code cannot recover from it even when the error is reported as prompt-too-long, because compaction keeps the newest turn (TASK-021). Ask for fewer files per step or line ranges. The percentage can only bring compaction earlier than Claude Code's default, never later. |
+| Claude Code fails on a large prompt with `exceed_context_size_error` | llama-server must run with `-kvu` next to `--parallel 2`. Without it each of the 2 slots gets only half of the 160K context, 80K, about what Claude Code's own prompt takes (about 67K). It is in `config/llama-swap.yaml`; keep it if you edit the flags. |
+| A server context and the Claude Code window disagree | Claude Code must never assume more than the server holds. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` matches the server's `ctx` (163840). Change them together with the macro in `config/llama-swap.yaml`. |
+| "Prompt is too long" or a 400 `ContextWindowExceededError` after many parallel Reads | Several large tool results in one turn can overflow the window before compaction runs. `config/claude-settings.json` caps each Read at 8000 tokens and compacts at 80% of the window minus 20K (about 115K). 8 parallel full Reads passed on the earlier entries; 16 (about 128K tokens in one step) end the turn with this error at any percentage (TASK-020), and Claude Code cannot recover from it even when the error is reported as prompt-too-long, because compaction keeps the newest turn (TASK-021). Ask for fewer files per step or line ranges. The percentage can only bring compaction earlier than Claude Code's default, never later. |
 | HTTP 401 from the router | On the PC: no key or the wrong key. The key comes from Credential Manager, so after a rotation restart the stack. From another device: its Tailscale login is not on the allowlist (another account, or an `allowed-logins.txt` that does not list it), the request came from a browser (refused on purpose, TASK-031), or the router was started while the PC was signed out of Tailscale (`ai-up` warns about an empty allowlist; restart the stack). A plain `curl` of `/v1/models` without a key on the PC should answer 401: that also proves the router is reachable. |
 | HTTP 404 from another device | The URL uses the tailnet IP: since m-3 the router answers only on the MagicDNS name (`http://caps.<tailnet>.ts.net:4000`). Or the stack is down while `/control` is published. |
 | `ai-remote.sh` reports an error | Its messages are explained in [docs/remote-client-macos.md](docs/remote-client-macos.md#starting-and-stopping-the-stack-from-the-mac). The PC must be on with you logged in, and `install-control.ps1` must have run once. |
 | curl prints `000`, or a timeout, from another device | Nothing answered: the stack is down (`ai-up`, or `ai-remote.sh up` from the Mac), Tailscale is off on one side, or the ACL blocks the device. Check `tailscale status` on both, and that `ai-up` printed a `tailnet http://...:4000` line (it is skipped when Tailscale is signed out). |
-| Local model answers slowly the first time | The model is loading (about 10 s, 18 s for the Q6_K) after the 300 s idle unload or a switch between Local Coder and Local Coder Q6. `ai-up -Warm` loads `local-coder` up front. |
+| Local model answers slowly the first time | The model is loading (about 12 s) after the 300 s idle unload. `ai-up -Warm` loads `local-coder` up front. |
+| Local model shows nothing for a minute or more | It is thinking. Claude Code does not show a local model's reasoning; long answers (whole files) can think for several minutes even at medium effort. |
 | A Claude model works, a local one fails (or the reverse) | The two routes are separate. Check `D:\local-ai\logs\litellm.err.log` for the failing one; the local side also depends on llama-swap (`http://127.0.0.1:8080/health` on the PC). |
 
 ## Security notes
 
-- **Bindings.** The router (4000), the control service (4100), llama-swap (8080) and llama-server (10001 for local-coder, 10002 for local-coder-38, 10003 for local-coder-q6) listen on `127.0.0.1` only. Tailnet port 4000, and only that port, is published with `tailscale serve` in HTTP mode: `/` goes to the router (published by `ai-up`, removed by `ai-down`) and `/control` to the control service (published by `install-control.ps1`). `start-litellm.ps1` refuses a non-loopback bind and llama-swap is always started with `-listen 127.0.0.1:8080`. No Windows Firewall rule was added (decision-006, decision-008).
+- **Bindings.** The router (4000), the control service (4100), llama-swap (8080) and llama-server (10001) listen on `127.0.0.1` only. Tailnet port 4000, and only that port, is published with `tailscale serve` in HTTP mode: `/` goes to the router (published by `ai-up`, removed by `ai-down`) and `/control` to the control service (published by `install-control.ps1`). `start-litellm.ps1` refuses a non-loopback bind and llama-swap is always started with `-listen 127.0.0.1:8080`. No Windows Firewall rule was added (decision-006, decision-008).
 - **Secrets.** The router key is generated in memory by `init-secrets.ps1` and stored in Windows Credential Manager. It is injected into the router process environment at start and into the Claude Code process by `claude-local.ps1`; it is never printed, passed as an argument or written to a file. A scan of the worktree, the git history and the logs found no copy of it (TASK-028). The Claude subscription token is forwarded only to Anthropic: the local deployments are reached through LiteLLM's `openai/` provider with a dummy key, so they never see it.
 - **Who gets in.** A remote device is let in by its Tailscale login (decision-008). `tailscale serve` adds `Tailscale-User-Login` to every request it forwards and overwrites one sent by the client; the router and the control service accept only the logins on the allowlist (see "Where things live"; the file stays outside the repo). A request carrying `Origin` or `Sec-Fetch-Site` is refused on this path, so a web page in your browser cannot use your identity (TASK-031). Remote devices hold no key. Programs on the PC can reach the loopback ports and set the identity header themselves; they run as you and could read the key from Credential Manager anyway (accepted in TASK-022).
 - **The router key.** One key is the LiteLLM master key and the key `claude-local.ps1` sends on the PC (decision-005), because separate client keys need a database. It also works from any device that reaches the router, so treat it as admin access to the router. If it leaks, rotate it: `scripts\init-secrets.ps1 -Rotate`, then `ai-down` and `ai-up` (the running router keeps the old key until then); no device needs updating ([docs/remote-client-macos.md](docs/remote-client-macos.md#rotating-the-key), TASK-017). `scripts\copy-router-key.ps1` puts the key on the clipboard for 60 s without printing it, for a client that cannot come in by identity; clear Windows clipboard history (Win+V) afterwards if it is on.

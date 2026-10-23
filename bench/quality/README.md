@@ -49,10 +49,10 @@ benchmarks or files that the diff does not show).
 Start the stack (`scripts\ai-up.ps1`), then from the PC:
 
 ```powershell
-bench\quality\run-all.ps1                          # both models, every task, 2 runs each
-bench\quality\run.ps1 -Model local-coder-38 -Task t2 -Rep 3
-bench\quality\run-all.ps1 -Client opencode -Models local-coder-38   # the same set in OpenCode (TASK-035), runs named oc-*
-bench\quality\run.ps1 -Model local-coder-38 -Task t6 -Client opencode -ClientConfig <opencode.json> -Tag ctx82k
+bench\quality\run-all.ps1                          # local-coder, every task, 2 runs each
+bench\quality\run.ps1 -Model local-coder -Task t2 -Rep 3
+bench\quality\run-all.ps1 -Client opencode        # the same set in OpenCode (TASK-035), runs named oc-*
+bench\quality\run.ps1 -Model local-coder -Task t6 -Client opencode -ClientConfig <opencode.json> -Tag ctx82k
 ```
 
 `-ClientConfig` replaces `config\claude-settings.json` or `config\opencode.json` for one run (a smaller window for a

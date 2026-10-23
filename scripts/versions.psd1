@@ -26,21 +26,7 @@
   # One entry per model file; Name is the llama-swap / LiteLLM model that serves it (config\llama-swap.yaml).
   Models  = @(
     @{
-      Name   = 'local-coder'   # also serves local-light (alias)
-      File   = 'Qwen3.6-27B-Q4_K_M.gguf'
-      Url    = 'https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q4_K_M.gguf'
-      Size   = 16817244384
-      Sha256 = '5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0'
-    }
-    @{
-      Name   = 'local-coder-q6'
-      File   = 'Qwen3.6-27B-Q6_K.gguf'
-      Url    = 'https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/Qwen3.6-27B-Q6_K.gguf'
-      Size   = 22523238624
-      Sha256 = 'ec1805fe87e6519c461c1ed2d179865464a875ed241032ead65a354f979cfe14'
-    }
-    @{
-      Name   = 'local-coder-38'   # trial entry (TASK-033); carries the MTP head (blk.64.nextn.*)
+      Name   = 'local-coder'   # also serves local-light (alias); carries the MTP head (blk.64.nextn.*), TASK-033/036
       File   = 'Qwen3.8-27B-UD-Q6_K.gguf'
       Url    = 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q6_K.gguf'
       Size   = 21983677344

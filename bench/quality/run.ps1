@@ -4,8 +4,8 @@
 # come from llama-swap /api/metrics/activity, and the hidden reasoning from /api/captures (LiteLLM does not pass it
 # on to Claude Code).
 #
-#   bench\quality\run.ps1 -Model local-coder-38 -Task t1 [-Rep 1] [-Client opencode] [-Out D:\local-ai\scratch\quality\runs]
-#   bench\quality\run.ps1 -Model local-coder-38 -Task t6 -Client opencode -ClientConfig <opencode.json> -Tag ctx82k   (compaction test)
+#   bench\quality\run.ps1 -Model local-coder -Task t1 [-Rep 1] [-Client opencode] [-Out D:\local-ai\scratch\quality\runs]
+#   bench\quality\run.ps1 -Model local-coder -Task t6 -Client opencode -ClientConfig <opencode.json> -Tag ctx82k   (compaction test)
 #
 # Needs the stack up (scripts\ai-up.ps1). Appends one line per run to <Out>\results.jsonl.
 param(
