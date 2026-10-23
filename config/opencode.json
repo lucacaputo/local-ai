@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "share": "disabled",
+  "enabled_providers": ["local-ai"],
+  "model": "local-ai/local-coder-38",
+  "small_model": "local-ai/local-coder-38",
+  "provider": {
+    "local-ai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local AI router",
+      "options": {
+        "baseURL": "{env:LOCAL_AI_ROUTER_URL}/v1",
+        "apiKey": "{env:LOCAL_AI_ROUTER_KEY}"
+      },
+      "models": {
+        "local-coder-38": { "name": "Local Coder 3.8", "limit": { "context": 163840, "output": 32000 } },
+        "local-coder-q6": { "name": "Local Coder Q6", "limit": { "context": 163840, "output": 32000 } }
+      }
+    }
+  }
+}

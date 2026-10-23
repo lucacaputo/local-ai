@@ -1,6 +1,6 @@
 # Quality set for local models (TASK-034)
 
-A small version of the PRD bake-off (section 6): the same tasks, run in Claude Code through the router, on each local
+A small version of the PRD bake-off (section 6): the same tasks, run in Claude Code (or OpenCode, TASK-035) through the router, on each local
 model. Used to decide whether Qwen3.8 (`local-coder-38`) replaces Qwen3.6 (`local-coder-q6`).
 
 ## Tasks
@@ -51,7 +51,13 @@ Start the stack (`scripts\ai-up.ps1`), then from the PC:
 ```powershell
 bench\quality\run-all.ps1                          # both models, every task, 2 runs each
 bench\quality\run.ps1 -Model local-coder-38 -Task t2 -Rep 3
+bench\quality\run-all.ps1 -Client opencode -Models local-coder-38   # the same set in OpenCode (TASK-035), runs named oc-*
+bench\quality\run.ps1 -Model local-coder-38 -Task t6 -Client opencode -ClientConfig <opencode.json> -Tag ctx82k
 ```
+
+`-ClientConfig` replaces `config\claude-settings.json` or `config\opencode.json` for one run (a smaller window for a
+compaction test, for example); `-Tag` goes into the run name. `-Models` takes a list only when run-all is called from
+PowerShell: through `powershell -File` a comma list arrives as one string, so call it once per model there.
 
 Each run works in a fresh copy of its fixture under `-Out` (default `D:\local-ai\scratch\quality\runs`) and keeps
 its data next to it in `<run>.data`, out of the model's sight: `stream.jsonl` (Claude Code), `answer.md` (the final
@@ -65,3 +71,9 @@ Notes:
   results counts it from the captured responses.
 - `tg` is output tokens over generation time for all requests of a run; `tg_long` only for requests with 2,000+
   output tokens.
+- OpenCode (`-Client opencode`): `opencode run --format json --auto` with `config\opencode.json` through the router,
+  web access denied, no tools for t5; t6c is skipped. `tool_errors` counts failed tools and calls OpenCode could not
+  parse (tool `invalid`); Claude Code's count also includes failed test runs. `compactions` counts Claude Code's
+  `compact_boundary` events and OpenCode's resume text after a compaction.
+- t3 and Qwen3.8: when the model quotes the chat template in the fixture it writes its own control tokens, and
+  `<|im_end|>` ends the generation; in OpenCode that left an empty answer in all four runs (TASK-035).

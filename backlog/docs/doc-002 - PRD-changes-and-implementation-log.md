@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-22 21:07'
+updated_date: '2026-10-23 05:17'
 ---
 # PRD changes and implementation log
 
@@ -41,7 +41,8 @@ The PRD (doc-0001) stays as written on 2026-10-18. This log records where the im
 | S3 (Blackwell, N1) | Pass: 65/65 layers on GPU, 63-77 tok/s (TASK-002) |
 | S4 (multi-step tool use) | Pass directly and via the router; tool-call error rate not measured against the R4 gate, see "Open items after m-2" (TASK-002, TASK-003) |
 | O4 context size | Resolved: 128K for the Q4_K_M entries, 160K for `local-coder-q6` (TASK-020) |
-| O1 alternative harness, O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Claude Code, Qwen3.6 27B, alias. The Q6_K quant of the same model was added as `local-coder-q6` (TASK-020). Reopen only if tool-call failures become a daily problem |
+| O1 alternative harness | Resolved: OpenCode for local models, Claude Code for Claude models (TASK-035, user 2026-10-23); it met the bar on tool failures, not on pass rate |
+| O2 final model, O3 `local-light` model | Resolved by not running the bake-off: Qwen3.6 27B, alias. The Q6_K quant of the same model was added as `local-coder-q6` (TASK-020); Qwen3.8 proposed to replace it (TASK-034, TASK-036) |
 | O5 picker mechanism | Resolved: `modelPicker` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and per-model `modelSettings.<model>.autoCompactWindow` when local models have different windows (TASK-020) |
 | O6 LiteLLM mixed config | Resolved: wildcard `anthropic/*` + local models works |
 | O7 secret store | Resolved: Windows Credential Manager, since the 1Password CLI was not installed (decision-001); rotation tested on the PC and the Mac (TASK-017) |
@@ -421,3 +422,69 @@ A small version of the PRD bake-off (section 6, R4 gate), kept in `bench/quality
 **Many-tools slowdown: not seen at a size that matters.** Long answers (2,000+ tokens) with Claude Code's full tool list against the short list: Qwen3.8 106.4 / 106.5 against 116.4 / 113.3 tok/s (about 7% slower), Qwen3.6 53.9 / 53.9 against 55.8 / 55.5 (about 3%). Prompts were 52-66K tokens, so the speeds sit between TASK-033's bench figures for short and 94K prompts. llama.cpp #27615's slowdown on long outputs does not show here.
 
 **Recommendation.** Qwen3.8 is the better coding agent: it passes the R4 tool-call gate (2.2% against 19%) with the same pass rate, finds the same bugs, and is about twice as fast per token; on short tasks (t1) it also finishes sooner. Its weakness is thinking at xhigh: long tasks take much longer, five requests ran into the 32K cap and one looped. Proposed: replace Qwen3.6 with Qwen3.8 in TASK-036, with a lower default `reasoning_effort` in the llama-swap entry (`--chat-template-kwargs`), after a short re-run of t1-t3 and t6 to check that quality holds at the lower effort. The user decides.
+
+## OpenCode as the client for local models (TASK-035, m-4)
+
+OpenCode 1.19.3 (npm `opencode-ai@1.19.3`, pinned: 1.19.4 came out on the day of the trial; `autoupdate` off, sharing off) on the PC, with `config/opencode.json`: one OpenAI-compatible provider `local-ai` on the router (`{env:LOCAL_AI_ROUTER_URL}/v1`, the router key from `{env:LOCAL_AI_ROUTER_KEY}`), entries `local-coder-38` and `local-coder-q6` at 160K context and 32,000 output tokens. It connects through the router rather than llama-swap: the router is the only service the Mac can reach (tailnet port 4000) and it does the auth; its OpenAI chat route passes `reasoning_effort` on and returns the reasoning, unlike the `/v1/messages` route Claude Code uses. The quality set (TASK-034) was run with `bench\quality\run-all.ps1 -Client opencode`: `opencode run --format json --auto`, web access denied as in the Claude Code runs, no tools for t5, t6c left out (OpenCode's tool list is already short: bash, edit, glob, grep, read, skill, task, todowrite, webfetch, write). Run data: `D:\local-ai\scratch\quality\runs` (`oc-*`).
+
+**Context at session start** (same model, same ts-demo copy, from llama-swap's captures):
+
+| Client | First request | Later requests |
+|---|---|---|
+| OpenCode | 10,954-11,183 tokens: 10 tools (21.7K characters), system prompt 21.7K characters | grow with the work only |
+| Claude Code (repo settings) | 21,155-21,313 tokens (49,290 in one run where the connectors were already loaded): 24 tools, system prompt 6.5K characters | 49-52K from the second request: Claude Code adds the user's claude.ai connectors (Gmail, Calendar, Drive, Docs: 58 tools, about 31K tokens, plus their instructions) |
+| Claude Code, `ENABLE_CLAUDEAI_MCP_SERVERS=false` | 21,255 tokens | 21.6-24.1K over a whole t1 run (24 tools, no connector tools) |
+
+The connector finding matters beyond size: in a local session the local model is offered tools such as Gmail send and Drive share. TASK-020's 67K at an interactive start is probably this 52K plus what an interactive session adds.
+
+**Quality set, OpenCode against Claude Code (TASK-034 runs; t1-t6, two runs each; pass, time in seconds):**
+
+| Task | Qwen3.6 Q6_K, Claude Code | Qwen3.6 Q6_K, OpenCode | Qwen3.8 + MTP, Claude Code | Qwen3.8 + MTP, OpenCode |
+|---|---|---|---|---|
+| t1 ts-demo edit | 2/2, 82 / 77 | 2/2, 51 / 55 | 2/2, 63 / 47 | 2/2, 43 / 27 |
+| t2 multi-step edit | 2/2, 100 / 99 | 2/2, 102 / 80 | 2/2, 112 / 145 | 2/2, 68 / 50 |
+| t3 review, 3 seeded bugs | 2/2, 170 / 107 | 2/2, 36 / 34: 2/3 and 3/3 bugs, no wrong claims | 2/2, 333 / 797 | 0/2, 52 / 37: no answer (below); 0/2 again in two extra runs |
+| t4 PR description | 1/2, 64 / 58 | 1/2, 39 / 34: run 1 invented a check ("verified the stack starts and stops cleanly") | 1/2, 133 / 112 | 2/2, 55 / 57 |
+| t5 logic puzzle, no tools | 2/2, 68 / 70 | 2/2, 66 / 40 | 2/2, 110 / 68 | 2/2, 62 / 65 |
+| t6 400-line module + 30 tests | 2/2, 233 / 244 | 2/2, 198 / 206 | 2/2, 592 / 844 | 2/2, 528 / 1,276 |
+| **All** | **11/12, 22.9 min** | **11/12, 15.7 min** | **11/12, 55.9 min** | **10/12, 38.7 min** |
+
+| Measure | Qwen3.6, Claude Code | Qwen3.6, OpenCode | Qwen3.8, Claude Code | Qwen3.8, OpenCode |
+|---|---|---|---|---|
+| Tool-call failures (failed test runs not counted) | 30 of 141, 21% (28 "File does not exist") | 1 of 120, 0.8% (a Glob on a wrong path) | 4 of 152, 2.6% | 2 of 177, 1.1% (a Read on a wrong path; a Write cut off at the 32K cap) |
+| Largest prompt, t1-t4 | 52-67K | 14-28K | 54-78K | 15-35K |
+| Generation speed per run | 52.6-62.2 tok/s | 58.7-62.3 tok/s | 93.9-141.4 tok/s | 109.7-149.5 tok/s |
+| Output tokens, t1-t6 | 55,988 | 49,149 | 302,702 | 244,208 |
+| Requests at the 32,000 output cap | 0 | 0 | 3 | 1 |
+
+OpenCode's failure counts include calls it could not parse (it reports them as tool `invalid`; `run.ps1` counts them since this task). The Claude Code figures are TASK-034's without the t6c control, so they differ slightly from that section.
+
+**Why Qwen3.8 gave no answer on t3 in OpenCode.** In all four runs the model read the chat template from the fixture and quoted it in its reasoning; where the template has `<|im_start|>` / `<|im_end|>` it wrote the real control token, and the end-of-turn token ended the generation (`finish_reason: stop` in the middle of a sentence, empty answer). Before stopping, run 1's reasoning had found all three seeded bugs. Claude Code met the same thing in TASK-034 (quoted think tags put the reasoning into the answer, one loop) but still returned a review. This is a model and server issue with text that contains the model's own control tokens, not an OpenCode one; it affects work on chat templates in either client.
+
+**Thinking and effort.** OpenCode keeps the reasoning as its own parts (199 reasoning parts in its session database after the runs), so its interface shows the model thinking, where Claude Code through LiteLLM shows nothing during 4-5 minute requests. The effort can be set per model in `opencode.json` (`"options": {"reasoningEffort": "low"}`): the request then carries `reasoning_effort`, and llama.cpp renders it into the Qwen3.8 template (low and xhigh each add their own system line; medium adds none). One t5 run at low effort was correct with 5,112 output tokens, against 7,741 / 8,723 at the default xhigh. Claude Code cannot set it through the router (TASK-034), so for Claude Code the default must sit in the llama-swap entry (TASK-036).
+
+**Compaction** (t6, one run each with a smaller window so that it must compact):
+
+| Run | Window | Compactions | Result |
+|---|---|---|---|
+| OpenCode, Qwen3.8, repo config (run 2 above) | 160K, compacts at about 132K (context minus the 32K output limit) | 1 | Pass, 1,276 s; the long time is the model rewriting the module four times to get near 400 lines |
+| OpenCode, Qwen3.8 | 82K, compacts at 50K | 1 | Pass, 403 s, no tool failures |
+| OpenCode, Qwen3.6 | 82K | 0 (largest prompt 32K) | Pass, 269 s |
+| Claude Code, Qwen3.8 | 100K: 80K effective, compacts at 64K | 1 (72.9K to 10.3K, 101 s) | Pass, 904 s |
+| Claude Code, Qwen3.6 | 100K | 4 (each about 65K to 9-16K, 36-62 s) | Pass, 782 s; 8 tool failures (5 Edits on text that was not in the file, 3 wrong-path Reads) besides 5 failed test runs |
+
+All six compactions produced a summary and the work went on; the empty summary of TASK-015 / TASK-021 did not show. Claude Code's 49-52K of fixed prompt sits outside what compaction can shrink, so in the smaller window it was back at the threshold after one or two steps. At the real 160K window that fixed part leaves Claude Code about 63K of working room before it compacts (115K threshold), against about 120K for OpenCode (132K threshold, 11K fixed).
+
+**Mac path, checked from the PC.** OpenCode through the tailnet name (`http://caps.<tailnet>.ts.net:4000`) with the key replaced by the marker `tailscale-identity`, and with a wrong value: both answered, let in by the Tailscale login, so OpenCode sends no browser headers (TASK-031) and needs no key on the Mac.
+
+**Verdict against PRD O1** (adopt for local models on about 15+ points of pass rate or half the tool failures): **met on tool failures, not on pass rate.** Tool failures fall from 21% to 0.8% on Qwen3.6 and from 2.6% to 1.1% on Qwen3.8 (halved, but 4 against 2 calls). Pass rate is the same on Qwen3.6 (11/12) and one task lower on Qwen3.8 (10/12, the t3 control-token stop above). Beyond the bar: the set takes about 30% less time in both models, the prompt at start is 11K instead of 21K (52K with the connectors), compaction has twice the working room, the thinking is visible, and the effort can be chosen per model. Against it: a second client to install and keep pinned, Claude models stay in Claude Code (subscription logins are blocked in third-party tools), and the interactive interface was not tried. **Decided (user, 2026-10-23): OpenCode is the client for local models; Claude Code stays for Claude models and remains usable as a fallback for local ones.** The claude.ai connectors stay enabled in Claude Code (`ENABLE_CLAUDEAI_MCP_SERVERS` is not set): with local work moving to OpenCode, Claude Code sessions are for Claude models, where the connectors are wanted. A local session in Claude Code still carries them (about 31K tokens, Gmail and Drive tools offered to the local model).
+
+**What the Mac setup needs** for OpenCode:
+
+1. OpenCode 1.19.3 pinned (`npm i -g opencode-ai@1.19.3`, or the release binary), recorded with the other pins; `autoupdate` stays off in the config.
+2. The repo's `config/opencode.json` as is, with `LOCAL_AI_ROUTER_URL` from `~/.config/local-ai/router-url` (written by `setup-client.sh`) and `LOCAL_AI_ROUTER_KEY=tailscale-identity`, the non-secret marker; no key, no Keychain item.
+3. A launcher `scripts/mac/opencode-local.sh`, the counterpart of `claude-local.sh`: sets `OPENCODE_CONFIG` and the two variables, then runs `opencode`; `ai-remote.sh up` beforehand as today.
+4. The model entries in `opencode.json` matched to the router: `local-coder-38` and `local-coder-q6` at 163,840 tokens, `local-coder` and `local-light` at 131,072 if they are offered, and the chosen `reasoningEffort` per model (TASK-036).
+5. A first check on the Mac: the interactive interface, the model picker, permission prompts (the runs here used `--auto`), and the reasoning shown while the model thinks.
+
+Not tested: OpenCode's interactive interface on either machine, its LSP and formatter integrations, long real sessions, and more than one run per compaction case.
