@@ -21,3 +21,6 @@ logs/
 .env.*
 *.key
 *.pem
+
+# Node dependencies (bench/agent and later the portal)
+node_modules/
