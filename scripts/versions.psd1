@@ -25,6 +25,11 @@
   Tailscale = @{ Version = '1.104.1'; WingetId = 'Tailscale.Tailscale' }
   # Client for local models (TASK-035, TASK-038); installed with npm, so Node.js is a prerequisite. Same pin on the Mac.
   OpenCode = @{ Version = '1.19.3'; Npm = 'opencode-ai' }
+  # Agent sandboxes (TASK-041, decision-011): Docker Desktop with the WSL2 backend is checked, not installed (it needs
+  # WSL2 and a restart). The image is built from sandbox\Dockerfile, which pins OpenClaw's own image by digest
+  # (extended-stable line, with Playwright's Chromium); install.ps1 checks the two agree.
+  DockerDesktop = @{ Version = '4.98.0'; WingetId = 'Docker.DockerDesktop' }
+  Sandbox = @{ Image = 'local-ai/sandbox'; OpenClaw = '2026.9.36'; Chromium = 'chromium-1243 (Playwright)' }
   # One entry per model file; Name is the llama-swap / LiteLLM model that serves it (config\llama-swap.yaml).
   Models  = @(
     @{

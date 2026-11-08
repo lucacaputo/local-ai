@@ -10,6 +10,7 @@ function norm(field: string, v: string): string {
   if (field === 'phone') return s.replace(/\D/g, '').replace(/^0039|^39(?=0)/, '');
   if (field === 'country') return s === 'italia' || s === 'italy' ? 'it' : s;
   if (field === 'terms') return s.replace(/\D/g, '');
+  if (field === 'city') return s.replace(/\s*\([a-z]{2}\)$/, '');   // "Bergamo (BG)": the province is fine
   return s.replace(/\s+/g, ' ').replace(/[.,]$/, '');
 }
 

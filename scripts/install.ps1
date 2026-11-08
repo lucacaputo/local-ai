@@ -125,6 +125,18 @@ if (Get-Command opencode.cmd -ErrorAction SilentlyContinue) {
   if ($ocVer -ne $v.OpenCode.Version) { $warnings.Add("OpenCode is '$ocVer'; pinned version is $($v.OpenCode.Version) (npm install -g $ocSpec).") }
 }
 
+# Docker Desktop (TASK-041): checked, never installed here; the agent sandboxes need it, the coding stack does not
+$dockerLine = 'not installed (agent sandboxes only; README, Requirements)'
+$dockerUp = $false
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+  $dd = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop' -ErrorAction SilentlyContinue).DisplayVersion
+  $dockerUp = (Invoke-Native 'docker' @('info', '--format', '{{.OSType}}')).Output -match 'linux'
+  $dockerLine = "Docker Desktop $dd, $(if ($dockerUp) { 'running' } else { 'not running' })"
+  if ($dd -and $dd -ne $v.DockerDesktop.Version) { $warnings.Add("Docker Desktop is $dd; pinned version is $($v.DockerDesktop.Version) (winget install --id $($v.DockerDesktop.WingetId) --version $($v.DockerDesktop.Version)).") }
+}
+$sandboxFrom = Select-String -Path (Join-Path $PSScriptRoot '..\sandbox\Dockerfile') -Pattern '^LABEL local-ai.openclaw="(.+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+if ($sandboxFrom -ne $v.Sandbox.OpenClaw) { $problems.Add("sandbox\Dockerfile is labelled OpenClaw $sandboxFrom but versions.psd1 pins $($v.Sandbox.OpenClaw).") }
+
 # control service (TASK-026): reported only; it is optional, so it is never installed or counted as missing here
 $ctlLine = if (Get-ScheduledTask -TaskName 'local-ai-control' -ErrorAction SilentlyContinue) { 'installed (starts at logon)' } else { 'not installed (optional: scripts\install-control.ps1)' }
 if (Get-NetTCPConnection -State Listen -LocalPort 4100 -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue) { $ctlLine += ', running' }
@@ -150,6 +162,7 @@ if ($tsLine)  { "  Tailscale  $tsLine" }
 if ($uvVer)   { "  uv         $uvVer" }
 if ($ocVer)   { "  OpenCode   $ocVer" }
 if ($ctlLine) { "  control    $ctlLine" }
+"  Docker     $dockerLine"
 foreach ($n in $needed) { "  [missing]  $n (would be installed with winget or npm)" }
 foreach ($i in $installed) { "  [install]  $i installed" }
 foreach ($w in $warnings) { "  warning: $w" }
@@ -232,6 +245,18 @@ foreach ($m in $v.Models) {
     Move-Item $part $modelPath -Force
   }
 }
+
+# agent sandbox image (TASK-041): built locally from the repo, only when Docker Desktop is running
+if ($dockerUp) {
+  Step "sandbox image $($v.Sandbox.Image) (OpenClaw $($v.Sandbox.OpenClaw))" {
+    # labels as JSON: PowerShell 5.1 drops the inner quotes of an {{index ... "name"}} template
+    $labels = try { (Invoke-Native 'docker' @('image', 'inspect', '-f', '{{json .Config.Labels}}', $v.Sandbox.Image)).Output | ConvertFrom-Json } catch { $null }
+    $labels -and $labels.'local-ai.openclaw' -eq $v.Sandbox.OpenClaw
+  } {
+    $r = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'sandbox.ps1'), 'build')
+    if ($r.Code -ne 0) { throw "sandbox image build failed: $($r.Output)" }
+  }
+} else { "  [skipped]  sandbox image (Docker Desktop not running)" }
 
 ''
 if ($CheckOnly) {

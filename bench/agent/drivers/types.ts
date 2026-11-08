@@ -3,6 +3,7 @@ export interface ToolCall { name: string; ok: boolean }
 export interface Turn {
   reply: string;
   toolCalls: ToolCall[];
+  toolNames?: string[];    // the tools used, when the agent reports names but not per call
   confirmations: number;   // confirmation requests seen, all denied (TASK-044 wires the real mechanism)
   raw?: unknown;           // the agent's own record of the turn, saved next to the results
 }

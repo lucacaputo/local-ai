@@ -20,7 +20,7 @@ Background and the reasons behind each choice: the PRD (`backlog/docs/doc-0001-P
 
 ## Requirements
 
-Windows 11, an NVIDIA GPU with about 30 GB of free VRAM for `local-coder` (with its caches and the MTP draft it uses 29.4 GB; built and measured on a 32 GB RTX 5090), a current NVIDIA driver (CUDA 12.8 or newer, compute capability 12.0), PowerShell 5.1, Node.js 22.18 or newer (for OpenCode), and a Claude subscription logged in to Claude Code. `install.ps1` installs everything else.
+Windows 11, an NVIDIA GPU with about 30 GB of free VRAM for `local-coder` (with its caches and the MTP draft it uses 29.4 GB; built and measured on a 32 GB RTX 5090), a current NVIDIA driver (CUDA 12.8 or newer, compute capability 12.0), PowerShell 5.1, Node.js 22.18 or newer (for OpenCode), and a Claude subscription logged in to Claude Code. `install.ps1` installs everything else. The agent sandboxes (m-5, in progress) also need Docker Desktop with the WSL2 backend, which `install.ps1` checks but does not install.
 
 ## Install (once)
 
@@ -68,6 +68,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-down.ps1
 - **Permissions.** Edits go through without a prompt. Shell commands ask, except read-only ones and test runs (`git status`, `git diff`, `git log`, `git show`, `ls`, `pwd`, `npm test`, `node --test`, and on the PC, where the shell is PowerShell, `Get-ChildItem`, `Get-Content`, `Get-Item`, `Get-Location`, `Test-Path`, `Resolve-Path`, `Select-String`, `Select-Object`, `Measure-Object` and their usual aliases). Each part of a pipe is checked on its own, and a command with a `{ }` script block always asks. Web fetch is denied. `opencode-local.ps1 --auto` approves the asks for that session; what is denied stays denied.
 - **Skills.** OpenCode also loads the skills in `~/.claude/skills`. The eight that need Claude-only tools (built-in-browser, chrome-browser, computer-use, deep-research, docs, google-workspace, import-memory, morning) are denied by name. The file skills (docx, pdf, pptx, xlsx, skill-creator) and the project's own skills still load. A newly synced Claude-only skill shows up until it is added to `permission.skill`.
 
+## Agent sandbox (m-5, in progress)
+
+Each user's agent is OpenClaw in its own Linux container (decision-010, decision-011), built from `sandbox/Dockerfile`: OpenClaw's official image with Chromium, plus Python with openpyxl, python-docx and pypdf from a hash-locked `sandbox/requirements.txt`. One user, the owner, for now.
+
+```powershell
+scripts\sandbox.ps1 build            # build local-ai/sandbox (install.ps1 does this when Docker Desktop runs)
+scripts\sandbox.ps1 start            # (re)create and start openclaw-owner; the volume keeps logins, files and history
+scripts\sandbox.ps1 token            # copy the Control UI token to the clipboard (cleared after 60 s)
+scripts\sandbox.ps1 stop             # stop it; reset deletes the volume as well
+```
+
+- **Policy is in the image.** `config/openclaw.json5` is baked read-only, so the agent, which runs as the same user, cannot widen its own tools. It allows only the tools the bake-off needs (files, shell, web fetch, browser, images, PDF, asking the user), only the browser plugin and its own skill, and no update checks, telemetry, model catalog downloads or memory plugin (which would wake the model on a schedule). OpenClaw's own sandbox is off: the container is the sandbox.
+- **Model.** The router's `local-coder-vision` (TASK-039, option A: 128K shared by two slots, image input), reached at `host.docker.internal:4000`. Until TASK-042 the container gets the router key; TASK-042 replaces it with a credential limited to the local models and isolates the container's network.
+- **Access.** The gateway is published on the PC's loopback (`127.0.0.1:18789`) and, by `tailscale serve`, at `https://<pc>.<tailnet>.ts.net:8443` for the Control UI. HTTPS needs Serve enabled on the tailnet once (the script prints the link). The token and the router key reach the container as environment variables from Credential Manager; anyone who can run `docker inspect` on the PC can read them.
+- **Startup.** The image's own entrypoint runs `openclaw doctor --fix`, which needs a writable config; the sandbox starts the gateway directly. After changing the OpenClaw version, run doctor once with the config writable.
+
 ## Where things live
 
 | What | Where |
@@ -103,6 +119,8 @@ The source of truth is `scripts/versions.psd1`. These passed the acceptance runs
 | NVIDIA driver | 617.42 (not installed by the scripts) |
 | Claude Code | 2.1.302 (client, not pinned) |
 | Node.js | 22.19.0 (for OpenCode, not installed by the scripts) |
+| Docker Desktop | 4.98.0 (agent sandboxes, not installed by the scripts) |
+| OpenClaw | 2026.9.36, extended-stable (official image `-browser` with Chromium 1243, pinned by digest in `sandbox/Dockerfile`) |
 
 Changing a pin means changing the version and the hash in `versions.psd1`, rerunning `install.ps1`, and updating the folder names in `config/llama-swap.yaml` and `scripts/ai-up.ps1`, which refer to `llama.cpp-b11719` and `llama-swap-v265`.
 

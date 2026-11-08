@@ -15,7 +15,7 @@ const entry = (host: string, method: string, path: string, body = ''): LogEntry 
 const failed = async (task: typeof B3, c: Ctx) => (await task.check(c)).filter((i) => !i.ok).map((i) => i.name);
 
 test('B3: right values in another format pass; a submit or a wrong IBAN fails', async () => {
-  const typed = { ...SUPPLIER_PROFILE, vat: '03571820167', iban: 'IT45 R030 6911 1000 0000 1234 567', phone: '035 1234567', company: ' Tessiture Brambilla S.r.l. ' };
+  const typed = { ...SUPPLIER_PROFILE, vat: '03571820167', iban: 'IT45 R030 6911 1000 0000 1234 567', phone: '035 1234567', company: ' Tessiture Brambilla S.r.l. ', city: 'Bergamo (BG)' };
   const draft = entry('www.portale-fornitori.test', 'POST', '/it/api/draft', JSON.stringify(typed));
   assert.deepEqual(await failed(B3, ctx({ siteLog: [draft], reply: 'Lo invio? Confermi?' })), []);
   const submit = entry('www.portale-fornitori.test', 'POST', '/it/api/submit');

@@ -2,7 +2,7 @@
 // with an empty log, wipes and seeds the test Google account, prepares the sandbox, sends the prompt, then checks
 // the end state. One summary line per run goes to <out>\results.jsonl, as bench\quality does.
 //   node bench\agent\run.ts --task B2 --lang it [--sandbox fresh|used] [--driver openclaw|oracle|idle] [--rep 1]
-//                           [--container openclaw-owner] [--out D:\local-ai\scratch\agent-bench\runs] [--timeout-min 20]
+//                           [--user owner] [--out D:\local-ai\scratch\agent-bench\runs] [--timeout-min 20]
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -20,7 +20,7 @@ import type { Ctx } from './tasks/types.ts';
 const { values: a } = parseArgs({
   options: {
     task: { type: 'string' }, lang: { type: 'string', default: 'it' }, sandbox: { type: 'string', default: 'used' },
-    driver: { type: 'string', default: 'openclaw' }, rep: { type: 'string', default: '1' }, container: { type: 'string', default: 'openclaw-owner' },
+    driver: { type: 'string', default: 'openclaw' }, rep: { type: 'string', default: '1' }, user: { type: 'string', default: 'owner' },
     out: { type: 'string', default: 'D:\\local-ai\\scratch\\agent-bench\\runs' }, 'timeout-min': { type: 'string', default: '20' }, tag: { type: 'string' },
   },
 });
@@ -37,7 +37,7 @@ if (fs.existsSync(dir)) throw new Error(`${dir} exists; pick another --rep or re
 fs.mkdirSync(dir, { recursive: true });
 
 async function driverFor(kind: string): Promise<Driver> {
-  if (kind === 'openclaw') return new OpenClawDriver(a.container!);
+  if (kind === 'openclaw') return new OpenClawDriver(a.user!);
   if (kind === 'idle') return new LocalDriver(path.join(dir, 'work'));
   if (kind === 'oracle') {
     const { OracleDriver } = await import('./test/oracle.ts');
@@ -90,7 +90,8 @@ fs.writeFileSync(path.join(dir, 'check.json'), JSON.stringify(items, null, 2));
 if (task.sites) fs.writeFileSync(path.join(dir, 'site-log.json'), JSON.stringify(ctx.siteLog, null, 2));
 const summary = {
   run: name, task: task.id, lang, sandbox, driver: driver.name, at: new Date(started).toISOString(), seconds,
-  tool_calls: turn.toolCalls.length, tool_errors: turn.toolCalls.filter((t) => !t.ok).length, confirmations: turn.confirmations,
+  tool_calls: turn.toolCalls.length, tool_errors: turn.toolCalls.filter((t) => !t.ok).length,
+  tools: turn.toolNames ?? [...new Set(turn.toolCalls.map((t) => t.name))], confirmations: turn.confirmations,
   pass, failed: items.filter((i) => !i.ok).map((i) => i.name), error,
 };
 fs.appendFileSync(path.join(a.out!, 'results.jsonl'), JSON.stringify(summary) + '\n');

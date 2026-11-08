@@ -1,0 +1,4 @@
+# Build context is the repo root; send only what the sandbox image needs.
+*
+!sandbox/requirements.txt
+!config/openclaw.json5

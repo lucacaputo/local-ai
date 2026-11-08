@@ -1,0 +1,5 @@
+# Office file libraries for the agent sandbox (TASK-041); locked with hashes in requirements.txt:
+#   uv pip compile requirements.in --generate-hashes --python-version 3.11 --python-platform x86_64-manylinux_2_28 --exclude-newer 2026-10-25 -o requirements.txt
+openpyxl
+python-docx
+pypdf
