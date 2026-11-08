@@ -1,11 +1,11 @@
 ---
 id: TASK-036
 title: Integrate the chosen local model and flags
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-21 20:45'
-updated_date: '2026-10-23 06:14'
+updated_date: '2026-11-08 16:25'
 labels: []
 milestone: m-4
 dependencies:
@@ -28,7 +28,7 @@ TASK-033 and TASK-034 decide the model file, MTP flags, slot count and window; t
 <!-- AC:BEGIN -->
 - [x] #1 versions.psd1, config/llama-swap.yaml, config/claude-settings.json and the ai-up VRAM thresholds match the chosen model, flags and window, and install.ps1 -CheckOnly reports the model installed
 - [x] #2 Models that were replaced are removed from the model list and the config only if the user agreed in TASK-034
-- [ ] #3 The ts-demo task passes through the router from the PC and from the Mac, with Claude models still answering
+- [x] #3 The ts-demo task passes through the router from the PC and from the Mac, with Claude models still answering
 - [x] #4 A decision record, doc-002 and the README describe the new setup
 <!-- AC:END -->
 
@@ -52,4 +52,12 @@ Effort re-run (Qwen3.8, OpenCode, t1-t3 and t6 x2): medium 6/6 on t1/t2/t6 in 16
 Default set with llama-swap env LLAMA_ARG_CHAT_TEMPLATE_KWARGS: --chat-template-kwargs '{...}' made llama-server exit (llama-swap on Windows passes the single quotes through). Prompt lengths on /v1/chat/completions and /v1/responses: no effort 13 = medium 13, low 43, xhigh 55, so Claude Code (no effort through the router) gets medium and a request can still override.
 
 Checks on the PC: install.ps1 -CheckOnly all ok; t1 pass in Claude Code (53 s) and OpenCode (24 s) on local-coder; t5 pass in Claude Code; local-light and Sonnet answer through claude-local.ps1; control status over the tailnet shows local-coder after restarting the service; ai-up warning and refusal with raised thresholds, normal start 13.7 s; model load 12.3 s. Idle free VRAM is 30,455 MiB, 255 MiB above the warning line. decision-009 created, decision-004 marked superseded. Mac run pending (user).
+
+AC #3: PC part verified (see above). Mac run not done: the user had no Mac at hand and asked to assume it works (2026-11-08); they will debug it later if it fails.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+local-coder is now Qwen3.8-27B UD-Q6_K with MTP draft 3, 160K context, 2 slots and the patched chat template; local-light is its alias. local-coder-q6 and local-coder-38 are removed and both Qwen3.6 files left the model list (files stay on disk). The effort re-run chose medium: 6/6 on t1/t2/t6 in 16.4 min against 34.7 min at xhigh. It is the server default through LLAMA_ARG_CHAT_TEMPLATE_KWARGS, so Claude Code (which cannot send an effort through the router) gets it too and a request can still override it. ai-up refuses below 22,000 MiB free and warns below 30,200; idle leaves 30,455 MiB, so a GPU-hungry app open alongside brings the warning. Verified on the PC: install -CheckOnly, t1 in Claude Code and OpenCode, t5, local-light and Sonnet through the router, control status over the tailnet. Not verified: the Mac run; the user asked to assume it works (2026-11-08) and will debug it later. decision-009 records the choice and supersedes decision-004.
+<!-- SECTION:FINAL_SUMMARY:END -->
