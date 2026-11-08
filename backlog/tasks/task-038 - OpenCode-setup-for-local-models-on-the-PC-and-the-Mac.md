@@ -1,11 +1,11 @@
 ---
 id: TASK-038
 title: OpenCode setup for local models on the PC and the Mac
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-23 05:20'
-updated_date: '2026-11-08 16:23'
+updated_date: '2026-11-08 16:25'
 labels: []
 milestone: m-4
 dependencies:
@@ -59,3 +59,9 @@ AC #4 on the PC (2026-11-08): interactive TUI through opencode-local.ps1 (no --a
 
 PowerShell rules (user, 2026-11-08): allowed Get-ChildItem, Get-Content, Get-Item, Get-Location, Test-Path, Resolve-Path, Select-String, Select-Object, Measure-Object and gci, dir, gc, cat, type, sls; last rule '*{*': ask, because OpenCode checks each part of a pipe on its own and last match wins, but a script block could run any command inside an allowed cmdlet's argument. Checked with opencode-local.ps1 run (no --auto): Get-ChildItem | Select-Object ran without asking; Get-ChildItem | Remove-Item -WhatIf asked for Remove-Item and was rejected; Select-Object with a script block asked through '*{*' and was rejected. README and doc-002 updated.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OpenCode is set up as the client for the local models; Claude Code stays for Claude models. OpenCode 1.19.3 is pinned in versions.psd1 and the README; install.ps1 installs it with npm or warns on another version; autoupdate is off. config/opencode.json lists Local Coder and Local Light at 160K/32K with reasoningEffort medium, denies web fetch and the eight Claude-only skills, allows edits, and asks for shell commands except read-only ones and test runs, including the PowerShell read-only cmdlets, with a last '*{*' ask rule against script blocks. New launchers: scripts/opencode-local.ps1 (key from Credential Manager, process-only) and scripts/mac/opencode-local.sh (saved router URL, Tailscale identity, no key). Verified on the PC: t1 through the launcher in opencode run --auto (32 s) and in the interactive TUI (50.5 s, own tests 9/9, hidden 5/5, reasoning shown, Allow once and Reject working), and the PowerShell rules with opencode run. Not verified: everything on the Mac; the user asked to assume it works (2026-11-08) and will debug it later. Note: from WSL, opencode run through powershell.exe needs stdin closed (< /dev/null) or it waits forever.
+<!-- SECTION:FINAL_SUMMARY:END -->
