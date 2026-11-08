@@ -79,7 +79,8 @@ text="$(osascript -l JavaScript -e "$js" "$cmd" "$code" "$(<"$body")")"
 case "$code" in
   200)
     echo "$text"
-    [[ "$cmd" == up ]] && echo "Start Claude Code with: $here/claude-local.sh"
+    [[ "$cmd" == up ]] && echo "Start OpenCode (local models) with: $here/opencode-local.sh" &&
+      echo "Start Claude Code (Claude models) with: $here/claude-local.sh"
     exit 0 ;;
   401) echo "$text" >&2
        echo "Sign this Mac in to Tailscale with the PC's account, or list its login in D:\\local-ai\\allowed-logins.txt on the PC." >&2 ;;

@@ -5,9 +5,10 @@
 #   scripts\install.ps1 -CheckOnly       report what is present/missing, change nothing (exit 2 if work is needed)
 #   scripts\install.ps1 -SkipModel       skip the 16 GB model download
 #
-# Missing uv and Tailscale are installed with winget at the pinned versions (Tailscale shows a Windows
-# permission prompt and needs a one-time sign-in afterwards). The NVIDIA driver is never installed
-# automatically: a missing or too-old driver stops the script with instructions.
+# Missing uv and Tailscale are installed with winget, and OpenCode with npm, at the pinned versions
+# (Tailscale shows a Windows permission prompt and needs a one-time sign-in afterwards). The NVIDIA
+# driver and Node.js are never installed automatically: a missing or too-old driver stops the script
+# with instructions, a missing Node.js only warns.
 #
 # Everything lands under -Root (default $env:LOCAL_AI_ROOT or D:\local-ai), outside the repo (decision-003).
 param(
@@ -106,6 +107,24 @@ if ($Uv -and (Test-Path $Uv)) {
   if ($uvVer -notmatch [regex]::Escape($v.Uv.Version)) { $warnings.Add("uv is '$uvVer'; pinned version is $($v.Uv.Version).") }
 }
 
+# OpenCode (TASK-038), the client for local models: installed with npm; Node.js itself is not installed here
+$npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+$ocSpec = "$($v.OpenCode.Npm)@$($v.OpenCode.Version)"
+if (-not (Get-Command opencode.cmd -ErrorAction SilentlyContinue)) {
+  if (-not $npm) { $warnings.Add("Node.js (npm) not found: install Node 22.18+, then rerun to install OpenCode $($v.OpenCode.Version), the client for local models.") }
+  elseif ($CheckOnly) { $needed.Add("OpenCode $($v.OpenCode.Version)") }
+  elseif (-not $problems.Count) {
+    "Installing OpenCode $($v.OpenCode.Version) with npm ..."
+    $r = Invoke-Native $npm.Source @('install', '-g', $ocSpec)
+    if ($r.Code -eq 0 -and (Get-Command opencode.cmd -ErrorAction SilentlyContinue)) { $installed.Add('OpenCode') }
+    else { $problems.Add("npm install -g $ocSpec failed (exit $($r.Code)): $($r.Output)") }
+  }
+}
+if (Get-Command opencode.cmd -ErrorAction SilentlyContinue) {
+  $ocVer = (Invoke-Native 'opencode.cmd' @('--version')).Output.Trim()
+  if ($ocVer -ne $v.OpenCode.Version) { $warnings.Add("OpenCode is '$ocVer'; pinned version is $($v.OpenCode.Version) (npm install -g $ocSpec).") }
+}
+
 # control service (TASK-026): reported only; it is optional, so it is never installed or counted as missing here
 $ctlLine = if (Get-ScheduledTask -TaskName 'local-ai-control' -ErrorAction SilentlyContinue) { 'installed (starts at logon)' } else { 'not installed (optional: scripts\install-control.ps1)' }
 if (Get-NetTCPConnection -State Listen -LocalPort 4100 -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue) { $ctlLine += ', running' }
@@ -129,9 +148,10 @@ if ($rootDrive -and (Test-Path "$rootDrive\")) {
 if ($gpuLine) { "  GPU        $gpuLine" }
 if ($tsLine)  { "  Tailscale  $tsLine" }
 if ($uvVer)   { "  uv         $uvVer" }
+if ($ocVer)   { "  OpenCode   $ocVer" }
 if ($ctlLine) { "  control    $ctlLine" }
-foreach ($n in $needed) { "  [missing]  $n (would be installed with winget)" }
-foreach ($i in $installed) { "  [install]  $i installed with winget" }
+foreach ($n in $needed) { "  [missing]  $n (would be installed with winget or npm)" }
+foreach ($i in $installed) { "  [install]  $i installed" }
 foreach ($w in $warnings) { "  warning: $w" }
 if ($problems.Count) {
   ''

@@ -5,6 +5,52 @@
   "enabled_providers": ["local-ai"],
   "model": "local-ai/local-coder",
   "small_model": "local-ai/local-coder",
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "git status": "allow",
+      "git status *": "allow",
+      "git diff": "allow",
+      "git diff *": "allow",
+      "git log": "allow",
+      "git log *": "allow",
+      "git show *": "allow",
+      "ls": "allow",
+      "ls *": "allow",
+      "pwd": "allow",
+      "Get-ChildItem *": "allow",
+      "gci *": "allow",
+      "dir *": "allow",
+      "Get-Content *": "allow",
+      "gc *": "allow",
+      "cat *": "allow",
+      "type *": "allow",
+      "Get-Item *": "allow",
+      "Get-Location": "allow",
+      "Test-Path *": "allow",
+      "Resolve-Path *": "allow",
+      "Select-String *": "allow",
+      "sls *": "allow",
+      "Select-Object *": "allow",
+      "Measure-Object *": "allow",
+      "npm test": "allow",
+      "npm test *": "allow",
+      "npm run test": "allow",
+      "node --test *": "allow",
+      "*{*": "ask"
+    },
+    "webfetch": "deny",
+    "skill": {
+      "built-in-browser": "deny",
+      "chrome-browser": "deny",
+      "computer-use": "deny",
+      "deep-research": "deny",
+      "docs": "deny",
+      "google-workspace": "deny",
+      "import-memory": "deny",
+      "morning": "deny"
+    }
+  },
   "provider": {
     "local-ai": {
       "npm": "@ai-sdk/openai-compatible",
@@ -14,7 +60,16 @@
         "apiKey": "{env:LOCAL_AI_ROUTER_KEY}"
       },
       "models": {
-        "local-coder": { "name": "Local Coder", "limit": { "context": 163840, "output": 32000 } }
+        "local-coder": {
+          "name": "Local Coder",
+          "limit": { "context": 163840, "output": 32000 },
+          "options": { "reasoningEffort": "medium" }
+        },
+        "local-light": {
+          "name": "Local Light",
+          "limit": { "context": 163840, "output": 32000 },
+          "options": { "reasoningEffort": "medium" }
+        }
       }
     }
   }

@@ -1,9 +1,11 @@
 ---
 id: TASK-038
 title: OpenCode setup for local models on the PC and the Mac
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-23 05:20'
+updated_date: '2026-11-08 16:23'
 labels: []
 milestone: m-4
 dependencies:
@@ -26,9 +28,34 @@ TASK-035 adopted OpenCode for local models (user, 2026-10-23); Claude Code stays
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The OpenCode version is pinned with the other versions (scripts/versions.psd1 and the README pin list), and autoupdate is off
-- [ ] #2 config/opencode.json lists the local models the router serves after TASK-036, with context limits matching the server windows and the reasoning effort chosen there
-- [ ] #3 A PC launcher and a Mac launcher (counterparts of claude-local.ps1 and claude-local.sh) start OpenCode against the router; the Mac one uses the saved router URL and no key
-- [ ] #4 The ts-demo task passes in the interactive OpenCode interface from the PC and from the Mac, with the reasoning shown and permission prompts working
-- [ ] #5 The README and doc-002 describe how to use OpenCode for local models and Claude Code for Claude models
+- [x] #1 The OpenCode version is pinned with the other versions (scripts/versions.psd1 and the README pin list), and autoupdate is off
+- [x] #2 config/opencode.json lists the local models the router serves after TASK-036, with context limits matching the server windows and the reasoning effort chosen there
+- [x] #3 A PC launcher and a Mac launcher (counterparts of claude-local.ps1 and claude-local.sh) start OpenCode against the router; the Mac one uses the saved router URL and no key
+- [x] #4 The ts-demo task passes in the interactive OpenCode interface from the PC and from the Mac, with the reasoning shown and permission prompts working
+- [x] #5 The README and doc-002 describe how to use OpenCode for local models and Claude Code for Claude models
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Pin OpenCode 1.19.3 (npm opencode-ai) in scripts/versions.psd1. install.ps1 installs it with npm when it is missing and warns on another version; a missing Node is a warning. Add it to the README pin list. autoupdate stays off in the config.
+2. config/opencode.json: local-coder and local-light, 163840 context and 32000 output each, reasoningEffort medium (TASK-036). Permissions (user, 2026-10-23): shell asks except read-only commands and test runs; web fetch denied; --auto skips the asks; the 8 Claude-only synced skills denied by name (built-in-browser, chrome-browser, computer-use, docs, google-workspace, morning, import-memory, deep-research).
+3. Launchers scripts/opencode-local.ps1 (key from Credential Manager, restored afterwards) and scripts/mac/opencode-local.sh (saved router URL, marker key). Both pass all arguments to opencode. setup-client.sh names the new launcher.
+4. Check on the PC: resolved config and agent permissions, models listed, t1 in ts-demo through the PC launcher (run --auto), a shell ask without --auto.
+5. README, docs/remote-client-macos.md and a doc-002 section.
+6. AC #4: the interactive TUI on the PC and the Mac needs the user.
+
+7. (user, 2026-11-08) Allow PowerShell read-only cmdlets and their aliases in the bash rules, with a last rule '*{*': ask against script blocks; check with opencode run without --auto.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented plan steps 1-5 (see doc-002 section 'OpenCode setup for local models (TASK-038, m-4)'). PC checks: install -CheckOnly reports OpenCode 1.19.3; resolved permissions as configured; t1 through opencode-local.ps1 run --auto passed in 32 s (11 tool calls, none failed, reasoning_effort medium sent, webfetch tool gone, only the 5 file skills plus customize-opencode offered, first prompt 8,719 tokens); without --auto npm test ran and node -e was asked (rejected by opencode run). Open: AC #4, the interactive TUI on the PC and the Mac (user).
+
+AC #3: PC launcher verified (t1 through opencode-local.ps1, see above). Mac launcher not run: the user had no Mac at hand and asked to assume it works (2026-11-08); they will debug it later if it fails.
+
+AC #4 on the PC (2026-11-08): interactive TUI through opencode-local.ps1 (no --auto), driven from a tmux session, in a fresh copy of ts-demo. t1 passed in 50.5 s: own tests 9/9, hidden grader 5/5. Reasoning shown (Thought lines); edits and npm test ran without a prompt; a PowerShell Get-ChildItem was asked and approved with Allow once; node -e was asked and Reject stopped the turn without running it. Mac TUI not run: assumed to work on the user's word, to debug later. Stack started for the test with ai-up -Warm and stopped again with ai-down.
+
+PowerShell rules (user, 2026-11-08): allowed Get-ChildItem, Get-Content, Get-Item, Get-Location, Test-Path, Resolve-Path, Select-String, Select-Object, Measure-Object and gci, dir, gc, cat, type, sls; last rule '*{*': ask, because OpenCode checks each part of a pipe on its own and last match wins, but a script block could run any command inside an allowed cmdlet's argument. Checked with opencode-local.ps1 run (no --auto): Get-ChildItem | Select-Object ran without asking; Get-ChildItem | Remove-Item -WhatIf asked for Remove-Item and was rejected; Select-Object with a script block asked through '*{*' and was rejected. README and doc-002 updated.
+<!-- SECTION:NOTES:END -->

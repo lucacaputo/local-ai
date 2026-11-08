@@ -3,7 +3,7 @@ id: doc-002
 title: PRD changes and implementation log
 type: other
 created_date: '2026-10-18 17:08'
-updated_date: '2026-10-23 06:13'
+updated_date: '2026-11-08 16:23'
 ---
 # PRD changes and implementation log
 
@@ -522,4 +522,34 @@ t6 took 365 / 375 s at medium against 528 / 1,276 s at xhigh, with 41-47 tests a
 | Local Light and a Claude model, Claude Code through the router | local-light answered (served by the local-coder process); Sonnet answered |
 | Control service over the tailnet (restarted) | `/control/status`: stack up, `model_loaded` local-coder |
 | `ai-up` thresholds (raised for the test, 30,455 MiB free) | Warning threshold raised: starts and warns; refusal threshold raised: "Not starting: only 30455 MiB of VRAM free"; normal start healthy in 13.7 s |
-| From the Mac | Not run yet (needs the user) |
+| From the Mac | Not run: the user had no Mac at hand and asked to assume it works (2026-11-08), to debug later |
+
+## OpenCode setup for local models (TASK-038, m-4)
+
+OpenCode is the client for the local models and Claude Code the client for the Claude models (user, 2026-10-23, after TASK-035). Claude Code still lists the local models as a fallback.
+
+- **Pin.** OpenCode 1.19.3 (npm `opencode-ai`) in `scripts/versions.psd1` and the README pin list, with the same pin on the Mac. `install.ps1` installs it with npm when it is missing and warns on another version. Node.js is a prerequisite that the scripts never install: a missing npm only warns. `autoupdate` is off in the config. Node 22.19.0 on the PC.
+- **Config** (`config/opencode.json`):
+  - Models: Local Coder (the default and the small model) and Local Light, each at 163,840 context and 32,000 output, with `reasoningEffort` medium. That is the server default from decision-009, and the request now carries it explicitly.
+  - Permissions (user, 2026-10-23): edits are allowed. Shell commands ask, except read-only ones and test runs (git status/diff/log/show, ls, pwd, npm test, node --test). On Windows the shell is PowerShell, so its read-only cmdlets are allowed too (Get-ChildItem, Get-Content, Get-Item, Get-Location, Test-Path, Resolve-Path, Select-String, Select-Object, Measure-Object, and the aliases gci, dir, gc, cat, type, sls; added 2026-11-08 after the TUI check asked for a Get-ChildItem listing). OpenCode checks each part of a pipe or chain on its own and the last matching rule wins, so a last rule `*{*`: ask makes any command with a script block ask: a block can run any command inside an allowed cmdlet's argument. Web fetch is denied, so it is also left out of the tool list. `--auto` approves the asks for a session (the user asked for an auto mode; OpenCode's flag approves everything not denied and has no classifier).
+  - Skills: OpenCode loads `~/.claude/skills` too. The eight synced skills that need Claude-only tools are denied by name (`permission.skill`): built-in-browser, chrome-browser, computer-use, deep-research, docs, google-workspace, import-memory, morning. The file skills and project skills still load.
+- **Launchers.**
+  - `scripts/opencode-local.ps1`: router URL from `LOCAL_AI_ROUTER` (default loopback), key from Credential Manager, both only in the OpenCode process and restored afterwards.
+  - `scripts/mac/opencode-local.sh`: the URL saved by `setup-client.sh`, and the `tailscale-identity` marker as the key (TASK-035 checked that the router lets OpenCode in by Tailscale login alone).
+  - Both set `OPENCODE_CONFIG` to the repo config and pass all arguments through.
+  - `ai-up`, `ai-remote.sh up` and `setup-client.sh` now name both launchers, and `setup-client.sh` reports a missing or unpinned OpenCode.
+
+| Check (PC) | Result |
+|---|---|
+| `install.ps1 -CheckOnly` | `OpenCode 1.19.3`, everything in place |
+| Resolved config through the launcher (`debug agent build`) | The bash ask and allow rules, webfetch deny and the eight skill denies are in effect; both models are listed |
+| t1 (ts-demo) through `opencode-local.ps1 run --auto` | Pass in 32 s: 11 tool calls, none failed, 10 tests. Request: `reasoning_effort: medium`; tools bash, edit, glob, grep, read, skill, task, todowrite, write (no webfetch). Skills in the prompt: docx, pdf, pptx, skill-creator, xlsx and OpenCode's built-in customize-opencode. First prompt 8,719 tokens, against 10,911 in TASK-036 |
+| Shell asks, `run` without `--auto` | `npm test` ran without asking; `node -e ...` was asked and, since `opencode run` cannot prompt, rejected ("The user rejected permission to use this specific tool call") |
+| Interactive interface (TUI) on the PC (2026-11-08, driven from tmux, `opencode-local.ps1` without `--auto`, fresh ts-demo copy) | t1 pass in 50.5 s: own tests 9/9, hidden grader 5/5. Reasoning shown as Thought lines; edits and `npm test` without a prompt; `Get-ChildItem` asked (Allow once ran it); `node -e` asked, Reject stopped the turn without running it |
+| PowerShell rules, `run` without `--auto` (2026-11-08) | `Get-ChildItem -Recurse -File \| Select-Object -ExpandProperty FullName` ran without asking (each part matched its allow rule); `Get-ChildItem src \| Remove-Item -WhatIf` asked for the Remove-Item part and was rejected; `Get-ChildItem src \| Select-Object @{n='x';e={ ... }}` asked through the `*{*` rule and was rejected |
+| Interactive interface on the Mac | Not run: the user had no Mac at hand and asked to assume it works (2026-11-08), to debug later |
+
+Notes:
+
+- From WSL, `opencode run` started through `powershell.exe` waits for stdin while stdin stays open. Close stdin (`< /dev/null`); run from a real console, nothing changes.
+- The Mac guide still mentioned Local Coder Q6 and 22 GB of VRAM from before TASK-036. Corrected here.

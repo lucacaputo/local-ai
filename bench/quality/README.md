@@ -75,5 +75,7 @@ Notes:
   web access denied, no tools for t5; t6c is skipped. `tool_errors` counts failed tools and calls OpenCode could not
   parse (tool `invalid`); Claude Code's count also includes failed test runs. `compactions` counts Claude Code's
   `compact_boundary` events and OpenCode's resume text after a compaction.
+- Since TASK-038 `config/opencode.json` hides eight Claude-only skills and asks before most shell commands
+  (`--auto` approves those asks in the runs), so OpenCode's first prompt is about 8.7K tokens instead of 11K.
 - t3 and Qwen3.8: when the model quotes the chat template in the fixture it writes its own control tokens, and
   `<|im_end|>` ends the generation; in OpenCode that left an empty answer in all four runs (TASK-035).

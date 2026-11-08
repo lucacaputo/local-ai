@@ -34,5 +34,10 @@ case "$code" in
   *) echo "Unexpected answer from the router: HTTP $code." ;;
 esac
 here="$(cd "$(dirname "$0")" && pwd)"
-echo "Start Claude Code with: $here/claude-local.sh"
+echo "Start Claude Code (Claude models) with: $here/claude-local.sh"
+echo "Start OpenCode (local models) with: $here/opencode-local.sh"
+oc="$(opencode --version 2>/dev/null || true)"
+if [[ "$oc" != "1.19.3" ]]; then   # the pin in scripts/versions.psd1
+  echo "OpenCode ${oc:-is not installed}${oc:+ is installed, the pinned version is 1.19.3}: npm install -g opencode-ai@1.19.3"
+fi
 echo "Check, start or stop the stack on the PC with: $here/ai-remote.sh status|up|down"

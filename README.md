@@ -1,9 +1,9 @@
 # local-ai
 
-A local coding model on a Windows PC with an RTX 5090, used from Claude Code through `/model` next to the real Claude models. Started on demand, at the PC or from your Mac, reachable from your own devices over Tailscale, off when you game.
+A local coding model on a Windows PC with an RTX 5090, used from OpenCode, or from Claude Code through `/model` next to the real Claude models. Started on demand, at the PC or from your Mac, reachable from your own devices over Tailscale, off when you game.
 
 ```
-Claude Code (PC or Mac)
+OpenCode (local models) or Claude Code (Claude models; local ones too), on the PC or a Mac
   -> router: LiteLLM, 127.0.0.1:4000, published on the tailnet as http://<pc>.<tailnet>.ts.net:4000/
      auth: a remote device's Tailscale login (allowlist), or the router key on the PC
        |- claude models (anthropic/*)  -> api.anthropic.com, on your subscription login
@@ -20,7 +20,7 @@ Background and the reasons behind each choice: the PRD (`backlog/docs/doc-0001-P
 
 ## Requirements
 
-Windows 11, an NVIDIA GPU with about 30 GB of free VRAM for `local-coder` (with its caches and the MTP draft it uses 29.4 GB; built and measured on a 32 GB RTX 5090), a current NVIDIA driver (CUDA 12.8 or newer, compute capability 12.0), PowerShell 5.1, and a Claude subscription logged in to Claude Code. `install.ps1` installs everything else.
+Windows 11, an NVIDIA GPU with about 30 GB of free VRAM for `local-coder` (with its caches and the MTP draft it uses 29.4 GB; built and measured on a 32 GB RTX 5090), a current NVIDIA driver (CUDA 12.8 or newer, compute capability 12.0), PowerShell 5.1, Node.js 22.18 or newer (for OpenCode), and a Claude subscription logged in to Claude Code. `install.ps1` installs everything else.
 
 ## Install (once)
 
@@ -31,7 +31,7 @@ scripts\init-secrets.ps1       # create the router key in Windows Credential Man
 scripts\install-control.ps1    # optional: control service at logon, to start and stop the stack from other devices
 ```
 
-`install.ps1` is safe to rerun. It installs missing `uv` and Tailscale with winget at the pinned versions (Tailscale needs a one-time sign-in afterwards) and never installs the NVIDIA driver. Everything lands in `D:\local-ai` (override with `-Root` or `LOCAL_AI_ROOT`), outside the repo.
+`install.ps1` is safe to rerun. It installs missing `uv` and Tailscale with winget and OpenCode with npm, at the pinned versions (Tailscale needs a one-time sign-in afterwards). It never installs the NVIDIA driver or Node.js, and only warns about another OpenCode version. Everything lands in `D:\local-ai` (override with `-Root` or `LOCAL_AI_ROOT`), outside the repo.
 
 `install-control.ps1` registers the scheduled task `local-ai-control` (at your logon and every 10 minutes, no elevation), which keeps the control service running, and publishes `/control` on the tailnet. The service starts or stops the stack only when a device asks. `install-control.ps1 -Uninstall` removes all of it, and `install.ps1 -CheckOnly` reports whether it is installed.
 
@@ -39,15 +39,16 @@ scripts\install-control.ps1    # optional: control service at logon, to start an
 
 ```powershell
 scripts\ai-up.ps1          # start: llama-swap + router, tailnet publishing; healthy in about 15-20 s
-scripts\claude-local.ps1   # Claude Code against the local router; all arguments go to claude
+scripts\opencode-local.ps1 # OpenCode against the local router, for the local models; all arguments go to opencode
+scripts\claude-local.ps1   # Claude Code against the local router, for the Claude models; all arguments go to claude
 scripts\ai-down.ps1        # stop everything and free the GPU (VRAM goes back to idle in a few seconds)
 ```
 
 - `ai-up -Warm` loads `local-coder` immediately; otherwise the first local request loads the model (about 12 s). Local Light shares Local Coder's process, so switching between them is instant.
 - `ai-up -NoTailnet` keeps the router on loopback only. `ai-up -Force` skips the game guard (at the PC only).
 - The AI stack never starts by itself: not at boot, and the control service (if installed) starts it only when asked. The model unloads by itself after 300 s without requests; `ai-down` also stops the processes.
-- In Claude Code, `/model` lists the Claude models plus Local Coder and Local Light.
-- From a Mac: `scripts/mac/ai-remote.sh up` (or `status`, `down`) starts the stack without being at the PC, and `scripts/mac/claude-local.sh` runs Claude Code against it. Neither needs the key. Setup: [docs/remote-client-macos.md](docs/remote-client-macos.md).
+- Local models in OpenCode, Claude models in Claude Code (TASK-035). OpenCode shows the model's reasoning while it thinks, starts with a prompt half the size of Claude Code's, and fails fewer tool calls on these models. Claude Code still reaches the local models when needed: `/model` lists the Claude models plus Local Coder and Local Light. OpenCode cannot use the Claude subscription, so it lists only the local models.
+- From a Mac: `scripts/mac/ai-remote.sh up` (or `status`, `down`) starts the stack without being at the PC, and `scripts/mac/opencode-local.sh` and `scripts/mac/claude-local.sh` run the clients against it. None of them needs the key. Setup: [docs/remote-client-macos.md](docs/remote-client-macos.md).
 
 **From WSL.** The scripts are Windows PowerShell 5.1 and use Credential Manager, so launch them through `powershell.exe` rather than running anything WSL-side:
 
@@ -60,6 +61,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-down.ps1
 `ai-up` and `ai-down` were run this way: `ai-up` returns in about 20 s once the stack is healthy. (Earlier versions of `ai-up` never returned to a WSL caller, because the background processes inherited its output pipe; `Start-Detached` in `scripts/lib/stack.ps1` fixes that, TASK-016.) `claude-local.ps1` was not run from WSL.
 
 `scripts\claude-local.ps1` sets `ANTHROPIC_BASE_URL` and the router key header for that one Claude Code process, and passes `config/claude-settings.json` (picker rows, the window of each local model, per-Read cap, compaction at 80%). It does not set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`: either would replace the subscription login and switch Claude requests to per-token billing. Use `$env:LOCAL_AI_ROUTER` to point it at another router URL.
+
+`scripts\opencode-local.ps1` does the same for OpenCode: it sets `OPENCODE_CONFIG` to `config/opencode.json` and passes the router URL and key as `LOCAL_AI_ROUTER_URL` and `LOCAL_AI_ROUTER_KEY`, for that one process. The config:
+
+- **Models.** Local Coder (the default) and Local Light, with the server's 160K window, 32,000 output tokens, and reasoning effort medium, the same as the server default (`reasoningEffort` per model; the template knows low, medium and xhigh). Auto-update and sharing are off.
+- **Permissions.** Edits go through without a prompt. Shell commands ask, except read-only ones and test runs (`git status`, `git diff`, `git log`, `git show`, `ls`, `pwd`, `npm test`, `node --test`, and on the PC, where the shell is PowerShell, `Get-ChildItem`, `Get-Content`, `Get-Item`, `Get-Location`, `Test-Path`, `Resolve-Path`, `Select-String`, `Select-Object`, `Measure-Object` and their usual aliases). Each part of a pipe is checked on its own, and a command with a `{ }` script block always asks. Web fetch is denied. `opencode-local.ps1 --auto` approves the asks for that session; what is denied stays denied.
+- **Skills.** OpenCode also loads the skills in `~/.claude/skills`. The eight that need Claude-only tools (built-in-browser, chrome-browser, computer-use, deep-research, docs, google-workspace, import-memory, morning) are denied by name. The file skills (docx, pdf, pptx, xlsx, skill-creator) and the project's own skills still load. A newly synced Claude-only skill shows up until it is added to `permission.skill`.
 
 ## Where things live
 
@@ -78,6 +85,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-down.ps1
 | Model server config | `config/llama-swap.yaml` |
 | Router config | `config/litellm.yaml`, `config/custom_auth.py` |
 | Claude Code settings | `config/claude-settings.json` |
+| OpenCode settings | `config/opencode.json`; OpenCode's own sessions and logs in `~/.local/share/opencode` |
 
 ## Pinned versions
 
@@ -90,9 +98,11 @@ The source of truth is `scripts/versions.psd1`. These passed the acceptance runs
 | LiteLLM | 1.106.0 (Python 3.12) |
 | uv | 0.13.1 |
 | Tailscale | 1.104.1 |
+| OpenCode | 1.19.3 (npm `opencode-ai`; the same pin on the Mac) |
 | Models | Qwen3.8-27B-UD-Q6_K.gguf (unsloth) |
 | NVIDIA driver | 617.42 (not installed by the scripts) |
 | Claude Code | 2.1.302 (client, not pinned) |
+| Node.js | 22.19.0 (for OpenCode, not installed by the scripts) |
 
 Changing a pin means changing the version and the hash in `versions.psd1`, rerunning `install.ps1`, and updating the folder names in `config/llama-swap.yaml` and `scripts/ai-up.ps1`, which refer to `llama.cpp-b11719` and `llama-swap-v265`.
 
@@ -113,7 +123,8 @@ Changing a pin means changing the version and the hash in `versions.psd1`, rerun
 | `ai-remote.sh` reports an error | Its messages are explained in [docs/remote-client-macos.md](docs/remote-client-macos.md#starting-and-stopping-the-stack-from-the-mac). The PC must be on with you logged in, and `install-control.ps1` must have run once. |
 | curl prints `000`, or a timeout, from another device | Nothing answered: the stack is down (`ai-up`, or `ai-remote.sh up` from the Mac), Tailscale is off on one side, or the ACL blocks the device. Check `tailscale status` on both, and that `ai-up` printed a `tailnet http://...:4000` line (it is skipped when Tailscale is signed out). |
 | Local model answers slowly the first time | The model is loading (about 12 s) after the 300 s idle unload. `ai-up -Warm` loads `local-coder` up front. |
-| Local model shows nothing for a minute or more | It is thinking. Claude Code does not show a local model's reasoning; long answers (whole files) can think for several minutes even at medium effort. |
+| Local model shows nothing for a minute or more | It is thinking. Claude Code does not show a local model's reasoning (OpenCode does); long answers (whole files) can think for several minutes even at medium effort. |
+| OpenCode stops to ask before a shell command | `config/opencode.json` asks for every shell command except read-only ones and test runs. Approve it, or start with `--auto` for a session without prompts. |
 | A Claude model works, a local one fails (or the reverse) | The two routes are separate. Check `D:\local-ai\logs\litellm.err.log` for the failing one; the local side also depends on llama-swap (`http://127.0.0.1:8080/health` on the PC). |
 
 ## Security notes

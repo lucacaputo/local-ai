@@ -1,7 +1,8 @@
 # Using the local AI stack from a Mac
 
-The PC runs the router (`ai-up`); the Mac reaches it over Tailscale only. Claude Code on the Mac keeps
-its own subscription login. The Mac stores no router key: `tailscale serve` tells the router which
+The PC runs the router (`ai-up`); the Mac reaches it over Tailscale only. OpenCode is the client for the
+local models, Claude Code for the Claude models (TASK-035, TASK-038); Claude Code on the Mac keeps its own
+subscription login. The Mac stores no router key: `tailscale serve` tells the router which
 Tailscale login is calling, and the router lets in the logins on its allowlist (TASK-023, TASK-024).
 
 ## One-time setup
@@ -13,15 +14,17 @@ Nothing has to be done on the PC, so this also works away from home.
 2. **PC name.** The router answers on the PC's MagicDNS name, `http://caps.<tailnet>.ts.net:4000`, which
    `ai-up` prints as its `tailnet` line (here `http://caps.tail0144cb.ts.net:4000`). The `100.x.y.z` IP does
    not work: the router is published in HTTP mode, which only answers on the name.
-3. **Repo on the Mac.** `git clone git@github.com:lucacaputo/local-ai.git`. Only `scripts/mac/` and
-   `config/claude-settings.json` are used.
+3. **Repo on the Mac.** `git clone git@github.com:lucacaputo/local-ai.git`. Only `scripts/mac/`,
+   `config/claude-settings.json` and `config/opencode.json` are used.
+   **OpenCode**, at the pinned version: `npm install -g opencode-ai@1.19.3` (needs Node.js; check with
+   `opencode --version`). Keep it on 1.19.3 until the pin in `scripts/versions.psd1` changes.
 4. **Store the URL.** On the Mac:
    ```
    scripts/mac/setup-client.sh http://caps.tail0144cb.ts.net:4000
    ```
    It saves the URL in `~/.config/local-ai/router-url`, removes a router key left in the Keychain by the
    older key-based setup, and checks that the router accepts this Mac's login (it says so, or tells you
-   that the stack is down).
+   that the stack is down). It also says when OpenCode is missing or not at the pinned version.
 
 The allowlist is the login the PC itself is signed in to Tailscale with, so a Mac signed in with the same
 account needs nothing else. Another account can be allowed by listing its login in
@@ -30,13 +33,18 @@ account needs nothing else. Another account can be allowed by listing its login 
 ## Daily use
 
 1. Start the stack: `scripts/mac/ai-remote.sh up` on the Mac (see below), or `scripts\ai-up.ps1` at the PC.
-2. On the Mac: `scripts/mac/claude-local.sh` (any arguments go to `claude`). `/model` shows the Claude
-   models plus Local Coder, Local Light and Local Coder Q6. The first local request loads the model
-   (about 10 s, 18 s for the Q6_K).
+2. On the Mac, for the local models: `scripts/mac/opencode-local.sh` (any arguments go to `opencode`;
+   `--auto` skips the shell-command prompts for the session). It lists Local Coder and Local Light. For the
+   Claude models: `scripts/mac/claude-local.sh` (any arguments go to `claude`); its `/model` shows the Claude
+   models plus Local Coder and Local Light. The first local request loads the model (about 12 s).
 3. Stop it when done: `scripts/mac/ai-remote.sh down` (at the PC: `scripts\ai-down.ps1`). A loaded model
-   holds about 22 GB of the GPU's memory.
+   holds about 29 GB of the GPU's memory.
 
-The launcher sends `x-litellm-api-key: tailscale-identity`. That is a fixed marker, not a secret: LiteLLM
+`opencode-local.sh` sets `OPENCODE_CONFIG` to the repo's `config/opencode.json`, the router URL saved by
+`setup-client.sh`, and `tailscale-identity` as the key, the same non-secret marker; the router lets the
+Mac in by its Tailscale login. The config (models, effort, permissions, skills) is described in the README.
+
+`claude-local.sh` sends `x-litellm-api-key: tailscale-identity`. That is a fixed marker, not a secret: LiteLLM
 only forwards the Claude subscription token to Anthropic when that header is present. It also unsets
 `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` for Claude Code on purpose: either would replace the
 subscription login and switch to API billing.
@@ -53,7 +61,8 @@ logged in; a locked screen is fine. The control service must also be installed o
 $ scripts/mac/ai-remote.sh up
 Starting the stack on the PC (about 15 s)...
 Stack healthy in 13.6 s: llama-swap http://127.0.0.1:8080, router http://127.0.0.1:4000, tailnet http://caps.tail0144cb.ts.net:4000. The model loads on the first request.
-Start Claude Code with: /Users/<you>/local-ai/scripts/mac/claude-local.sh
+Start OpenCode (local models) with: /Users/<you>/local-ai/scripts/mac/opencode-local.sh
+Start Claude Code (Claude models) with: /Users/<you>/local-ai/scripts/mac/claude-local.sh
 $ scripts/mac/ai-remote.sh status
 Stack up: no model loaded yet (the first request loads one). VRAM: 1247 of 32607 MiB used.
 $ scripts/mac/ai-remote.sh down

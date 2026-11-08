@@ -98,4 +98,4 @@ if ($Warm) {
 
 @{ startedAt = (Get-Date).ToString('o'); vramBaselineMiB = $baseline; llamaSwapPid = (Get-Listener 8080).Pid } | ConvertTo-Json | Set-Content (Get-StateFile $root)
 "Stack healthy in $([math]::Round($clock.Elapsed.TotalSeconds, 1)) s: llama-swap $swapUrl, router $routerUrl$(if ($tailnet) { ", $tailnet" }). The model loads on the first request$(if ($Warm) { ' (already loaded)' })."
-"Use: scripts\claude-local.ps1   Stop: scripts\ai-down.ps1"
+"Use: scripts\opencode-local.ps1 (local models), scripts\claude-local.ps1 (Claude models)   Stop: scripts\ai-down.ps1"

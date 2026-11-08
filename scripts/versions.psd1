@@ -23,6 +23,8 @@
   LiteLlm = @{ Version = '1.106.0'; Python = '3.12'; VenvDir = 'litellm-venv' }
   Uv      = @{ Version = '0.13.1'; WingetId = 'astral-sh.uv' }
   Tailscale = @{ Version = '1.104.1'; WingetId = 'Tailscale.Tailscale' }
+  # Client for local models (TASK-035, TASK-038); installed with npm, so Node.js is a prerequisite. Same pin on the Mac.
+  OpenCode = @{ Version = '1.19.3'; Npm = 'opencode-ai' }
   # One entry per model file; Name is the llama-swap / LiteLLM model that serves it (config\llama-swap.yaml).
   Models  = @(
     @{
