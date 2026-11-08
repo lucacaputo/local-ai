@@ -34,6 +34,13 @@
       Size   = 21983677344
       Sha256 = 'c9c206812fbe4ac7b76a729e25928b63f2ae89d37f69da7a71c20aec763cd436'
     }
+    @{
+      Name   = 'local-coder-vision'   # vision projector for the same Qwen3.8 file (--mmproj), TASK-039
+      File   = 'Qwen3.8-27B-mmproj-F16.gguf'
+      Url    = 'https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/mmproj-F16.gguf'
+      Size   = 927607488
+      Sha256 = 'cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e'
+    }
   )
   MinCudaVersion = '12.8'
   MinComputeCapability = '12.0'   # Blackwell (sm_120)

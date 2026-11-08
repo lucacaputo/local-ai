@@ -21,6 +21,13 @@ model_list:
       api_base: http://127.0.0.1:8080/v1
       api_key: none
 
+  # Trial (TASK-039): local-coder with the vision projector; not in the Claude Code or OpenCode settings.
+  - model_name: local-coder-vision
+    litellm_params:
+      model: openai/local-coder-vision
+      api_base: http://127.0.0.1:8080/v1
+      api_key: none
+
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   # No database, so LiteLLM's own key lookup answers 400 for a wrong key; this answers 401 (TASK-011).

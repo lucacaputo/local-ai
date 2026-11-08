@@ -43,3 +43,26 @@ models:
       --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-type-k q8_0 --spec-draft-type-v q8_0
       # unsloth's template with one change: a later system message gets its own turn instead of an error (TASK-033)
       --chat-template-file ${env.LOCAL_AI_REPO}\config\qwen3.8-chat-template.jinja
+
+  # Trial entry (TASK-039): local-coder plus the vision projector, for the agent stack (decision-013). Port 10002
+  # (llama-swap orders ports by name); ai-up's port check, ai-down and the control service know only 10001.
+  # llama-swap runs one model at a time, so loading this one unloads local-coder.
+  # The chosen 32 GB entry (doc-004, option A): 128K instead of 160K, since 160K plus the projector leaves 0.8 GB of
+  # VRAM; 30.3 GB in use, 85 tok/s at a full prompt. It replaces local-coder after the bake-off (TASK-045).
+  "local-coder-vision":
+    name: "Local Coder Vision (trial)"
+    description: "local-coder with the Qwen3.8 vision projector, TASK-039 trial"
+    ttl: 300
+    env:
+      - 'LLAMA_ARG_CHAT_TEMPLATE_KWARGS={"reasoning_effort":"medium"}'
+    cmd: |
+      ${llama-server}
+      -m ${env.LOCAL_AI_ROOT}\models\Qwen3.8-27B-UD-Q6_K.gguf
+      --mmproj ${env.LOCAL_AI_ROOT}\models\Qwen3.8-27B-mmproj-F16.gguf
+      # at least 2,048 tokens per image: the default (~1,050 for a 1280x800 screenshot) misread 10 px text
+      --image-min-tokens 2048
+      --jinja -c 131072 -ngl 99 -fa on
+      --parallel 2 -kvu
+      --cache-type-k q8_0 --cache-type-v q8_0
+      --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-type-k q8_0 --spec-draft-type-v q8_0
+      --chat-template-file ${env.LOCAL_AI_REPO}\config\qwen3.8-chat-template.jinja
