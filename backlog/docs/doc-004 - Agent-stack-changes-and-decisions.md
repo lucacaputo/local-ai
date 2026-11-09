@@ -3,7 +3,7 @@ id: doc-004
 title: Agent stack changes and decisions
 type: other
 created_date: '2026-11-08 17:38'
-updated_date: '2026-11-08 20:09'
+updated_date: '2026-11-09 18:45'
 ---
 # Agent stack changes and decisions
 
@@ -105,6 +105,58 @@ OpenClaw accepts a verified identity from a trusted proxy in front of it. With a
 - The repo gets a Node workspace (package.json, lockfile, tests) for the portal and later services.
 - On the host, the portal runs either as a Windows process managed like the router, or as a container next to the sandboxes; decided in implementation. As a container it needs access to the Docker API to manage the sandboxes, which must not be reachable from the sandboxes themselves.
 
+## decision-015: Each sandbox is cut off from the network except through its own gate; the router knows it by its own key
+
+**Context.** decision-011 left open how a sandbox reaches the internet and the router and nothing else. Measured on Docker Desktop 4.98 (TASK-042):
+
+- **On the default bridge, a container reaches everything.** That includes the router, llama-swap (8080), the control service (4100) and LAN devices (192.168.1.1), all through `host.docker.internal` or directly.
+- **On an internal Docker network, a container reaches nothing.** No DNS, no host and no LAN. But no port can be published from an internal network either.
+- **The router trusted a spoofable header.** It lets a request in by the `Tailscale-User-Login` header (TASK-022), and a sandbox could set that header itself: with the owner's login it got admin access to the router (200 instead of 401). This was open from TASK-041 until this change.
+- **OpenClaw has an operator-proxy mode.** It can send all of its own HTTP and WebSocket traffic through an outside proxy (`proxy.proxyUrl`), model calls included, as CONNECT tunnels. Its browser is not covered by that mode: it needs Chrome's own proxy flag, and OpenClaw drives a proxied browser only with its private-network check off. Before opening a page it also looks the name up itself.
+
+**Decision.**
+
+- **Network.** Each sandbox is on an internal Docker network of its own, `openclaw-<user>-net`. One more container joins it, the user's gate, `openclaw-<user>-gate` (`sandbox/gate`, TypeScript with no dependencies, per decision-014). The gate is also on the default bridge, so it is the sandbox's only way in or out.
+- **The gate's four jobs:**
+  - **Forward proxy (3128)**, for HTTP and CONNECT:
+    - Ports 80 and 443 only.
+    - It resolves each name itself, refuses it if any address is not public, then connects to the address it checked.
+    - The refused ranges are loopback, private, carrier-grade NAT (the tailnet), link-local, documentation, benchmark, multicast, reserved, IPv6 local, and the IPv6 forms that embed an IPv4 address.
+  - **Router pass (4000):**
+    - Only `/v1/` paths, with no dot segments and no encoded or doubled slashes.
+    - Identity and forwarding headers are removed (`tailscale-*`, `x-forwarded-*`, `forwarded`, `x-real-ip`, `x-local-ai-*`).
+    - Every request is stamped `x-local-ai-sandbox: 1`.
+    - OpenClaw reaches it as `gate:4000` through the proxy. A tunnel to it ends at the same port, which reads every request.
+  - **Control UI forward:** a plain TCP forward from the PC's loopback (`127.0.0.1:18789`) into the sandbox. tailscale serve publishes it as before. The gateway trusts the gate's address as its proxy.
+  - **DNS:** every name gets one placeholder address, `198.18.0.1` (RFC 2544 range), and nothing is looked up for real. OpenClaw's pre-navigation check passes, the browser hands the name to the proxy, and no query leaves the gate.
+- **The gate logs** destination, verdict and reason, and for the router method, path and status. Never headers, bodies or other sites' paths.
+- **Inside the sandbox:**
+  - OpenClaw's managed proxy is `http://gate:3128`.
+  - Web fetch, the shell and Python use the same proxy from the environment.
+  - Chromium gets `--proxy-server=http://gate:3128` and `--proxy-bypass-list=*.test;<-loopback>`, so even its loopback goes to the gate, which refuses it. Only the bench's `.test` sites are direct, and they exist only on the bench network.
+  - The browser's private-network check is off (`dangerouslyAllowPrivateNetwork`, approved by the owner). The gate is the boundary.
+- **Router credential:**
+  - Each sandbox has a key of its own, in Credential Manager (`local-ai/sandbox-<user>-router`).
+  - The router knows it only by its SHA-256 hash, in `D:\local-ai\sandbox-keys.json`. The file is outside the repo and is read again when it changes.
+  - With a sandbox key, `config/custom_auth.py` allows listing the models and chat completions on `local-*` models. Anything else is 403: Claude models, the Anthropic routes, admin routes.
+  - A stamped request gets in only with a sandbox key: never by Tailscale identity, never by the master key.
+  - `scripts\sandbox.ps1 revoke` drops one sandbox's hash and key, and `start` issues a new one.
+
+**Alternatives considered.**
+
+- **Squid plus a port forwarder:** a proven proxy, but two images, no tests of ours, and it would still need the header rules on the router side.
+- **Firewall rules in Docker Desktop's VM:** they don't survive restarts and are hard to test from the repo.
+- **The router as a destination of the forward proxy:** a CONNECT tunnel hides the headers, so the spoofed identity would pass. That is why the router has its own pass.
+
+**Consequences.**
+
+- One gate per user: about 30 MB of RAM, and a sandbox can never use another user's gate.
+- Anything that ignores the proxy settings (raw sockets, native tools) gets no network at all, by design.
+- The first request to a site costs one more hop. The model's own calls are not measurably slower: generation dominates.
+- Bench fixtures stay reachable: the bench connects the sandbox to its `agent-bench` network, and `.test` names bypass the proxy.
+- One startup request from OpenClaw to `clawhub.ai`, its plugin hub, still goes out. Its caller names the address itself, so `OPENCLAW_CLAWHUB_URL` cannot redirect it. It is public, so the gate lets it through; the owner chose not to block it.
+- Programs on the PC can still set the identity header on the router's loopback port; the user accepted that in TASK-022.
+
 ## Open decisions
 
 Not decided yet; each one gets a decision record when it is settled.
@@ -114,7 +166,6 @@ Not decided yet; each one gets a decision record when it is settled.
 | Where confirmations are enforced (AF5, AN8; doc-003 P9) | Trying OpenClaw's exec approvals and `ask_user` | A hard gate the model cannot skip, at least for Google actions (send, delete, share) and form submits |
 | How the Google tools are added | Whether OpenClaw takes MCP servers; `workspace-mcp` (multi-user OAuth 2.1) as the candidate | Also decides whether users consent twice (sign-in and tools) |
 | Notifications (D2) | OpenClaw's Google Chat channel plugin; Web Push from the portal for non-domain users | doc-003 P5 |
-| Sandbox network isolation | decision-011 | Internal network plus egress proxy, or firewall rules |
 | Encryption at rest | decision-011 | BitLocker, or encrypted volumes |
 
 ## Vision projector on the 32 GB card (TASK-039, m-5)
@@ -186,3 +237,30 @@ A was the recommendation:
 - 128K was the window before TASK-020 (decision-004); a session running alone can still use all of it.
 
 The home install has few people at once, and the office is a separate 24 GB entry (m-8). B is the fallback if the bake-off shows two slots queue too much at home, and only if Q5 passes there. The trial entry `local-coder-vision` now carries A's flags. Taking A changes Claude Code's `CLAUDE_CODE_MAX_CONTEXT_TOKENS` and OpenCode's context limit to 131,072 when the entry becomes local-coder (TASK-045 or the m-5 integration).
+
+## Sandbox network tests (TASK-042, m-5)
+
+`scripts\test-sandbox.ps1 [-Revoke]` runs these checks against a running sandbox. Last run on 2026-11-09: all passed, with `-Revoke`.
+
+- **Reachable from inside the sandbox:** the internet through the gate (200). Through the router pass with the sandbox key: the model list (200) and a `local-coder-vision` chat (200).
+- **No connection without the gate (000):** the internet, the router by its host address, and the LAN.
+- **Refused by the gate (403):** llama-swap (8080), the control service (4100), the router by its host address, the LAN (192.168.1.1), the metadata address (169.254.169.254), and the container's own loopback sent to the gate as the browser sends it. The PC's tailnet name is refused too (port 8443 not allowed).
+- **Router pass:**
+  - No key: 401.
+  - The owner's Tailscale login spoofed: 401.
+  - Sandbox key: Claude model 403, `/v1/messages` 403, and a non-`/v1/` admin route refused by the gate (403).
+- **DNS:** the sandbox resolves every web name to `198.18.0.1` only. Container names (`gate`) resolve normally.
+- **From the PC:**
+  - The owner's key works (200), and is refused on a request stamped as a sandbox's (401).
+  - The key file holds the hash, not the key.
+  - The sandbox has no published port.
+  - No key or token appears in the router, gate or OpenClaw logs.
+- **Revoke:**
+  - The sandbox gets 401 at once, while the owner's key still works.
+  - `start` issues a new key (200).
+- **Agent turns:**
+  - Model calls go through the gate's router pass.
+  - Web fetch reaches example.com.
+  - The browser opens Wikipedia. It shows the gate's refusal for 192.168.1.1 and for `127.0.0.1:18789`.
+  - Bench task B3 (form on a fixture site) passes: all fields right, no submit, confirmation asked.
+- **Gate unit tests:** `sandbox\gate`, `npm test` (11 tests) and `npm run typecheck`.

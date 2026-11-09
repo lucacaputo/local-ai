@@ -73,15 +73,27 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/ai-down.ps1
 Each user's agent is OpenClaw in its own Linux container (decision-010, decision-011), built from `sandbox/Dockerfile`: OpenClaw's official image with Chromium, plus Python with openpyxl, python-docx and pypdf from a hash-locked `sandbox/requirements.txt`. One user, the owner, for now.
 
 ```powershell
-scripts\sandbox.ps1 build            # build local-ai/sandbox (install.ps1 does this when Docker Desktop runs)
-scripts\sandbox.ps1 start            # (re)create and start openclaw-owner; the volume keeps logins, files and history
+scripts\sandbox.ps1 build            # build local-ai/sandbox and local-ai/sandbox-gate (install.ps1 does this when Docker Desktop runs)
+scripts\sandbox.ps1 start            # (re)create and start openclaw-owner and its gate; the volume keeps logins, files and history
 scripts\sandbox.ps1 token            # copy the Control UI token to the clipboard (cleared after 60 s)
-scripts\sandbox.ps1 stop             # stop it; reset deletes the volume as well
+scripts\sandbox.ps1 stop             # stop them; reset deletes the volume as well
+scripts\sandbox.ps1 revoke           # the router stops taking the sandbox's key at once; start issues a new one
+scripts\test-sandbox.ps1 [-Revoke]   # check what the sandbox reaches and what it must not (TASK-042)
 ```
 
 - **Policy is in the image.** `config/openclaw.json5` is baked read-only, so the agent, which runs as the same user, cannot widen its own tools. It allows only the tools the bake-off needs (files, shell, web fetch, browser, images, asking the user; PDFs are read with pypdf in the shell), only the browser plugin and its own skill, and no update checks, telemetry, model catalog downloads or memory plugin (which would wake the model on a schedule). OpenClaw's own sandbox is off: the container is the sandbox.
-- **Model.** The router's `local-coder-vision` (TASK-039, option A: 128K shared by two slots, image input), reached at `host.docker.internal:4000`. Until TASK-042 the container gets the router key; TASK-042 replaces it with a credential limited to the local models and isolates the container's network.
-- **Access.** The gateway is published on the PC's loopback (`127.0.0.1:18789`) and, by `tailscale serve`, at `https://<pc>.<tailnet>.ts.net:8443` for the Control UI. HTTPS needs Serve enabled on the tailnet once (the script prints the link), and the tailnet policy must grant `tcp:8443` (see Security). Docker Desktop hands the forwarded traffic to the container from the bridge gateway, which the script passes in as the only trusted proxy. A new browser asks for the token, then waits for a one-time device approval on the PC: `docker exec openclaw-owner node /app/openclaw.mjs devices list`, then `... devices approve <request>`. The token and the router key reach the container as environment variables from Credential Manager; anyone who can run `docker inspect` on the PC can read them.
+- **Network (decision-015).** The sandbox is on an internal Docker network of its own (`openclaw-owner-net`) with no route out. Its gate (`openclaw-owner-gate`, `sandbox/gate`) is the only other container there, and the only way in or out:
+  - **Web proxy.** Ports 80 and 443, public addresses only, checked after the gate's own name lookup. Home, LAN, tailnet and PC addresses are refused.
+  - **Router.** Passed on `gate:4000`, `/v1/` paths only, with identity headers removed.
+  - **Control UI.** The gate forwards its port.
+  - **DNS.** Answers with a placeholder address only.
+
+  OpenClaw, its browser, the shell and Python all use the proxy. Everything else simply has no network.
+- **Model.** The router's `local-coder-vision` (TASK-039, option A: 128K shared by two slots, image input), through the gate. The sandbox has a router key of its own:
+  - it can only ask the local models; Claude models and admin routes get 403;
+  - the router knows it only by its hash (`D:\local-ai\sandbox-keys.json`);
+  - a request that came through a gate is never let in by Tailscale identity or the master key.
+- **Access.** The gate publishes the gateway on the PC's loopback (`127.0.0.1:18789`) and, by `tailscale serve`, at `https://<pc>.<tailnet>.ts.net:8443` for the Control UI. HTTPS needs Serve enabled on the tailnet once (the script prints the link), and the tailnet policy must grant `tcp:8443` (see Security). The gate's address on the sandbox network is the gateway's only trusted proxy. A new browser asks for the token, then waits for a one-time device approval on the PC: `docker exec openclaw-owner node /app/openclaw.mjs devices list`, then `... devices approve <request>`. The token and the sandbox's key reach the container as environment variables from Credential Manager; anyone who can run `docker inspect` on the PC can read them.
 - **Startup.** The image's own entrypoint runs `openclaw doctor --fix`, which needs a writable config; the sandbox starts the gateway directly. After changing the OpenClaw version, run doctor once with the config writable.
 
 ## Where things live

@@ -29,7 +29,7 @@
   # WSL2 and a restart). The image is built from sandbox\Dockerfile, which pins OpenClaw's own image by digest
   # (extended-stable line, with Playwright's Chromium); install.ps1 checks the two agree.
   DockerDesktop = @{ Version = '4.98.0'; WingetId = 'Docker.DockerDesktop' }
-  Sandbox = @{ Image = 'local-ai/sandbox'; OpenClaw = '2026.9.36'; Chromium = 'chromium-1243 (Playwright)' }
+  Sandbox = @{ Image = 'local-ai/sandbox'; Gate = 'local-ai/sandbox-gate'; OpenClaw = '2026.9.36'; Chromium = 'chromium-1243 (Playwright)' }
   # One entry per model file; Name is the llama-swap / LiteLLM model that serves it (config\llama-swap.yaml).
   Models  = @(
     @{

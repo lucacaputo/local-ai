@@ -248,10 +248,11 @@ foreach ($m in $v.Models) {
 
 # agent sandbox image (TASK-041): built locally from the repo, only when Docker Desktop is running
 if ($dockerUp) {
-  Step "sandbox image $($v.Sandbox.Image) (OpenClaw $($v.Sandbox.OpenClaw))" {
+  Step "sandbox images $($v.Sandbox.Image) (OpenClaw $($v.Sandbox.OpenClaw)) and $($v.Sandbox.Gate)" {
     # labels as JSON: PowerShell 5.1 drops the inner quotes of an {{index ... "name"}} template
     $labels = try { (Invoke-Native 'docker' @('image', 'inspect', '-f', '{{json .Config.Labels}}', $v.Sandbox.Image)).Output | ConvertFrom-Json } catch { $null }
-    $labels -and $labels.'local-ai.openclaw' -eq $v.Sandbox.OpenClaw
+    $gateId = (Invoke-Native 'docker' @('image', 'inspect', '-f', '{{.Id}}', $v.Sandbox.Gate)).Output
+    $labels -and $labels.'local-ai.openclaw' -eq $v.Sandbox.OpenClaw -and "$gateId".StartsWith('sha256:')
   } {
     $r = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'sandbox.ps1'), 'build')
     if ($r.Code -ne 0) { throw "sandbox image build failed: $($r.Output)" }

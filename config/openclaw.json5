@@ -1,15 +1,17 @@
 // OpenClaw in a user's sandbox container (TASK-041, decision-010). Baked read-only into the image
 // (sandbox/Dockerfile), so the agent, which runs as the same user, cannot widen its own tools or plugins.
 // Machine-specific values come from environment variables set by scripts\sandbox.ps1.
+// Network (TASK-042): the container is on an internal Docker network with no route out; its gate (sandbox/gate) is
+// the forward proxy for the web, passes the router on gate:4000, and forwards the Control UI port in.
 {
   gateway: {
     mode: "local",
-    // inside the container; Docker publishes the port on the host's loopback only, and tailscale serve puts it on the tailnet
+    // inside the container; the gate publishes it on the host's loopback only, and tailscale serve puts it on the tailnet
     bind: "lan",
     port: 18789,
     auth: { mode: "token", token: { source: "env", provider: "default", id: "OPENCLAW_GATEWAY_TOKEN" } },
-    // Docker Desktop delivers published-port traffic from the bridge gateway; tailscale serve's forwarding headers
-    // arrive through it and are rejected unless that one address is trusted
+    // the gate's address on the sandbox network: tailscale serve's forwarding headers arrive through it and are
+    // rejected unless that one address is trusted
     trustedProxies: ["${OPENCLAW_TRUSTED_PROXY}"],
     controlUi: {
       // the tailnet HTTPS address (a secure context, which the Control UI's device sign-in needs)
@@ -26,9 +28,9 @@
     catalogRefresh: { enabled: false },
     providers: {
       local: {
-        baseUrl: "http://host.docker.internal:4000/v1",
-        // until TASK-042 the router key; then a sandbox credential that reaches only the local models
-        apiKey: { source: "env", provider: "default", id: "LOCAL_AI_ROUTER_KEY" },
+        baseUrl: "http://gate:4000/v1",
+        // this sandbox's own key: the router lets it ask the local models and nothing else (config/custom_auth.py)
+        apiKey: { source: "env", provider: "default", id: "LOCAL_AI_SANDBOX_KEY" },
         api: "openai-completions",
         timeoutSeconds: 600,   // a cold model load takes about 15 s, a long prompt minutes
         models: [
@@ -64,6 +66,8 @@
       "ask_user", "session_status",
     ],
     exec: { host: "gateway", security: "full", ask: "off" },   // runs inside the container
+    // the gate resolves names and refuses private addresses; the container has no DNS of its own for the web
+    web: { fetch: { useTrustedEnvProxy: true } },
     toolSearch: false,   // offer the allowed tools directly instead of behind search/describe/call
   },
 
@@ -73,18 +77,23 @@
     // Chromium's own sandbox needs user namespaces, which the container does not grant; the container is the
     // boundary, and a page that escaped the renderer would get what the agent already has (a shell in it)
     noSandbox: true,
-    // the bake-off's fixture sites live on a private Docker network (bench/agent); .test names never resolve elsewhere
-    ssrfPolicy: {
-      allowedHostnames: [
-        "www.ufficiopro.test", "www.sediastore.test", "www.ergoshop.test", "www.portale-fornitori.test",
-        "www.recensioni-arredo.test", "www.collect.test", "www.devconf-krakow.test", "www.volafacile.test", "www.hotelfinder.test",
-      ],
-    },
+    // OpenClaw's managed proxy does not cover the browser, so Chromium gets the gate as its proxy. "<-loopback>" sends
+    // the container's own loopback there too (the gate refuses it); only the bench's fixture sites (.test, on a
+    // Docker network of their own, bench/agent) are reached directly
+    extraArgs: ["--proxy-server=http://gate:3128", "--proxy-bypass-list=*.test;<-loopback>"],
+    // OpenClaw refuses to drive a proxied browser under its strict private-network policy (it cannot see where the
+    // proxy connects). The gate is the boundary instead: it resolves every name and refuses private addresses
+    // (TASK-042, option A approved by the owner). The sandbox's DNS is the gate's placeholder answer, 198.18.0.1
+    // (RFC 2544 range), which OpenClaw checks before navigating; the browser then sends the name to the proxy.
+    ssrfPolicy: { dangerouslyAllowPrivateNetwork: true, allowRfc2544BenchmarkRange: true },
   },
 
   // Plugins and skills only from this list (AF10); the memory plugin would schedule its own model runs.
   plugins: { allow: ["browser"], slots: { memory: "none" } },
   skills: { allowBundled: ["browser-automation"], workshop: { autonomous: { mode: "off" } } },
+
+  // All of OpenClaw's own HTTP and WebSocket traffic, model calls included, through the gate; loopback stays direct.
+  proxy: { proxyUrl: "http://gate:3128", loopbackMode: "gateway-only" },
 
   update: { checkOnStart: false },
   telemetry: { enabled: false },

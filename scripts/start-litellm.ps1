@@ -24,17 +24,18 @@ if ($clash) { throw "Port $Port is already in use on $($clash.LocalAddress) (pid
 $logs = Join-Path $Root 'logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 
-$old = @{ K = $env:LITELLM_MASTER_KEY; U = $env:PYTHONUTF8; T = $env:LITELLM_TELEMETRY; A = $env:LOCAL_AI_ALLOWED_LOGINS }
+$old = @{ K = $env:LITELLM_MASTER_KEY; U = $env:PYTHONUTF8; T = $env:LITELLM_TELEMETRY; A = $env:LOCAL_AI_ALLOWED_LOGINS; S = $env:LOCAL_AI_SANDBOX_KEYS }
 try {
   $env:LITELLM_MASTER_KEY = Get-LocalAiRouterKey
   $env:LOCAL_AI_ALLOWED_LOGINS = (Get-AllowedLogins $Root) -join ','   # read by config\custom_auth.py
   if (-not $env:LOCAL_AI_ALLOWED_LOGINS) { Write-Warning 'No allowed Tailscale logins (Tailscale signed out, no allowed-logins.txt): remote devices are refused until the stack is restarted; the key still works.' }
+  $env:LOCAL_AI_SANDBOX_KEYS = Join-Path $Root 'sandbox-keys.json'   # hashes of the sandbox keys (scripts\sandbox.ps1)
   $env:PYTHONUTF8 = '1'          # LiteLLM's banner crashes on cp1252 when output is redirected
   $env:LITELLM_TELEMETRY = 'False'
   Start-Detached $exe @('--config', (Join-Path $repo 'config\litellm.yaml'), '--host', $ListenHost, '--port', "$Port") `
     (Join-Path $logs 'litellm.out.log') (Join-Path $logs 'litellm.err.log') | Out-Null
 } finally {
-  $env:LITELLM_MASTER_KEY = $old.K; $env:PYTHONUTF8 = $old.U; $env:LITELLM_TELEMETRY = $old.T; $env:LOCAL_AI_ALLOWED_LOGINS = $old.A
+  $env:LITELLM_MASTER_KEY = $old.K; $env:PYTHONUTF8 = $old.U; $env:LITELLM_TELEMETRY = $old.T; $env:LOCAL_AI_ALLOWED_LOGINS = $old.A; $env:LOCAL_AI_SANDBOX_KEYS = $old.S
 }
 for ($i = 0; $i -lt 60; $i++) {
   Start-Sleep 2

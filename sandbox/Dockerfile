@@ -28,6 +28,13 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
     OPENCLAW_CONFIG_PATH=/etc/openclaw/openclaw.json5 \
     OPENCLAW_CONFIG_READONLY=1 \
     OPENCLAW_STATE_DIR=/home/node/.openclaw
+# The shell, Python and web_fetch go out through the gate (TASK-042); there is no other route.
+ENV HTTP_PROXY=http://gate:3128 HTTPS_PROXY=http://gate:3128 http_proxy=http://gate:3128 https_proxy=http://gate:3128 \
+    NO_PROXY=localhost,127.0.0.1,::1,.test no_proxy=localhost,127.0.0.1,::1,.test
+# ClawHub, OpenClaw's skill and plugin hub: plugins and skills come only from the image's allowlist, so its default
+# address points at a closed local port and its telemetry is off. One startup request to clawhub.ai still goes out
+# (its caller names the address itself); the gate lets it through like any public site (TASK-042 notes).
+ENV OPENCLAW_CLAWHUB_URL=http://127.0.0.1:9 CLAWHUB_DISABLE_TELEMETRY=1
 
 USER node
 WORKDIR /home/node/work
