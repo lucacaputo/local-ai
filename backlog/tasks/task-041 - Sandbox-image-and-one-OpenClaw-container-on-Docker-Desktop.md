@@ -1,11 +1,11 @@
 ---
 id: TASK-041
 title: Sandbox image and one OpenClaw container on Docker Desktop
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-08 17:43'
-updated_date: '2026-11-08 23:08'
+updated_date: '2026-11-09 18:11'
 labels: []
 milestone: m-5
 dependencies: []
@@ -32,7 +32,7 @@ decision-010 and decision-011: each user's OpenClaw runs in its own Linux contai
 - [x] #3 A script creates and starts the owner's container with a named volume for its home folder; browser logins, files and OpenClaw state survive a container restart, and a reset deletes them
 - [x] #4 OpenClaw uses the router as an OpenAI-compatible provider with image input and the window and output limits of its slot
 - [x] #5 Only the tools the bake-off needs are allowed, and plugins and skills come only from an allowlist in the repo
-- [ ] #6 The owner reaches the OpenClaw web interface from the Mac over the tailnet, and no other port of the container is reachable
+- [x] #6 The owner reaches the OpenClaw web interface from the Mac over the tailnet, and no other port of the container is reachable
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -52,4 +52,12 @@ decision-010 and decision-011: each user's OpenClaw runs in its own Linux contai
 Built and running. Findings: the image's entrypoint runs doctor --fix, which refuses a read-only config, so the sandbox starts the gateway directly (tini, node openclaw.mjs gateway); state needs OPENCLAW_STATE_DIR (else it goes next to the config). Defaults that had to go: 14 plugins (now 1: browser), memory-core's scheduled dreaming job (would wake the model), remote model catalog download, update check, Tool Search (hid browser/web_fetch/ask_user behind search tools), 14 bundled skills incl. clawhub (skills.allowBundled [] does not restrict; agents.defaults.skills does). Chromium's own sandbox cannot start in the container (no user namespaces): browser.noSandbox true; before that the agent started its own Chromium with --no-sandbox through exec. The pdf tool is not offered with this model (needs native PDF input); pypdf in the shell covers it. web_fetch refuses private addresses (only an all-or-nothing switch), so fixture sites go through the browser.
 
 Verified: config validates; a turn through the router answers from local-coder-vision with contextTokens 131072; a browser screenshot of a fixture page read correctly; offered tools = the 12 allowed, skills = browser-automation, plugins 1/66. Persistence: file, browser cookie and session survive docker restart and a recreate (sandbox.ps1 start); reset removes all three. Ports: only 127.0.0.1:18789 published; CDP 18800/18791/9222 closed on the host; 18789 not reachable on the tailnet IP. RAM: about 1.3 GB with Chromium open (limit 4 GB). install.ps1 -CheckOnly reports Docker Desktop 4.98.0 and the sandbox image. Open: tailnet HTTPS (Serve not enabled on the tailnet yet; needs the user) and the Control UI from the Mac.
+
+Tailnet and Mac (2026-11-09): the Control UI over https://<pc>.<tailnet>.ts.net:8443 first returned 403: Docker Desktop delivers published-port traffic from the bridge gateway (172.17.0.1), and the gateway rejects forwarded headers from an untrusted proxy. Fixed with gateway.trustedProxies set to that one address, read from docker network inspect by sandbox.ps1 (OPENCLAW_TRUSTED_PROXY). From the Mac the page then hung: the tailnet policy granted only tcp:4000 (TASK-034); the user added tcp:8443 to the same autogroup:self grant. A new browser asks for the gateway token, then waits for a one-time device approval (openclaw devices approve); the approval is on the volume and survives a recreate. Verified by the user: Control UI from the Mac, the agent answered. Ports: only 127.0.0.1:18789 published by the container, CDP ports closed, tailnet policy limited to 4000 and 8443. Also fixed: the container was marked unhealthy because the base image's HEALTHCHECK runs dist/docker-healthcheck.js relative to /app and our WORKDIR differs; the Dockerfile now sets the same check by absolute path (healthy after rebuild).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Sandbox image and the owner's OpenClaw container. sandbox/Dockerfile extends the official OpenClaw 2026.9.36-browser image (pinned by digest; Chromium 1243, Node 24, Python 3.11) with a hash-locked venv (openpyxl, python-docx, pypdf), moves the browsers out of the home volume, bakes config/openclaw.json5 read-only and starts the gateway directly (the image's doctor --fix needs a writable config). Policy: router provider local-coder-vision (131072 context, image input, 32000 output), 12 allowed tools, one plugin (browser), one skill (browser-automation), no Tool Search, memory plugin, update check, telemetry or catalog download; browser.noSandbox since Chromium's sandbox cannot start in the container. scripts/sandbox.ps1 build|start|stop|reset|status|token: container openclaw-<user>, volume openclaw-<user>-home, token and router key from Credential Manager as env vars, gateway on host loopback and over tailnet HTTPS 8443 with the bridge gateway as the only trusted proxy. versions.psd1, README and install.ps1 -CheckOnly cover Docker Desktop and the image. Verified: turn and screenshot through the router; offered tools and plugins; persistence across restart and recreate, reset clears it; only 127.0.0.1:18789 published; Control UI from the Mac with the agent answering (user). Follow-ups: the router key in the container and its network access are TASK-042; the tailnet policy now grants tcp:4000 and tcp:8443; docker inspect exposes the env secrets to anyone with Docker access on the PC; on an OpenClaw bump, run doctor once with the config writable.
+<!-- SECTION:FINAL_SUMMARY:END -->

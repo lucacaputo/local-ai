@@ -73,6 +73,8 @@ switch ($Action) {
     $env:OPENCLAW_GATEWAY_TOKEN = Get-LocalAiSecret $tokenTarget
     $env:LOCAL_AI_ROUTER_KEY = Get-LocalAiRouterKey   # until TASK-042 gives each sandbox its own credential
     $env:OPENCLAW_PUBLIC_ORIGIN = $origin
+    # the default bridge's gateway, where Docker Desktop's published port delivers (and so tailscale serve's) traffic
+    $env:OPENCLAW_TRUSTED_PROXY = (Invoke-Docker @('network', 'inspect', 'bridge', '-f', '{{(index .IPAM.Config 0).Gateway}}')).Trim()
     try {
       Invoke-Docker @(
         'run', '-d', '--name', $name, '--hostname', 'sandbox',
@@ -80,10 +82,10 @@ switch ($Action) {
         '-p', "127.0.0.1:${Port}:18789",
         '--memory', $Memory, '--shm-size', '1g',
         '--security-opt', 'no-new-privileges', '--cap-drop', 'ALL',
-        '-e', 'OPENCLAW_GATEWAY_TOKEN', '-e', 'LOCAL_AI_ROUTER_KEY', '-e', 'OPENCLAW_PUBLIC_ORIGIN', '-e', 'TZ=Europe/Rome',
+        '-e', 'OPENCLAW_GATEWAY_TOKEN', '-e', 'LOCAL_AI_ROUTER_KEY', '-e', 'OPENCLAW_PUBLIC_ORIGIN', '-e', 'OPENCLAW_TRUSTED_PROXY', '-e', 'TZ=Europe/Rome',
         '--label', 'local-ai.sandbox=1', '--label', "local-ai.user=$User",
         $image) | Out-Null
-    } finally { Remove-Item Env:OPENCLAW_GATEWAY_TOKEN, Env:LOCAL_AI_ROUTER_KEY, Env:OPENCLAW_PUBLIC_ORIGIN -ErrorAction SilentlyContinue }
+    } finally { Remove-Item Env:OPENCLAW_GATEWAY_TOKEN, Env:LOCAL_AI_ROUTER_KEY, Env:OPENCLAW_PUBLIC_ORIGIN, Env:OPENCLAW_TRUSTED_PROXY -ErrorAction SilentlyContinue }
     $ok = $false
     for ($i = 0; $i -lt 60 -and -not $ok; $i++) { Start-Sleep 1; $ok = Test-Http "http://127.0.0.1:$Port/readyz" }
     if (-not $ok) { throw "Gateway not ready after 60 s: docker logs $name" }

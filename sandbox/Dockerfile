@@ -32,6 +32,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
 USER node
 WORKDIR /home/node/work
 EXPOSE 18789
+# Same check and timings as the base image, by absolute path: its own is relative to /app, the old WORKDIR
+HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 CMD ["node", "/app/dist/docker-healthcheck.js"]
 # The image's own entrypoint runs `openclaw doctor --fix` first, which needs a writable config; with the config
 # pinned read-only the gateway starts directly. On a version bump, run doctor once without OPENCLAW_CONFIG_READONLY.
 ENTRYPOINT ["tini", "-s", "--"]

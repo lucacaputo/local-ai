@@ -8,6 +8,9 @@
     bind: "lan",
     port: 18789,
     auth: { mode: "token", token: { source: "env", provider: "default", id: "OPENCLAW_GATEWAY_TOKEN" } },
+    // Docker Desktop delivers published-port traffic from the bridge gateway; tailscale serve's forwarding headers
+    // arrive through it and are rejected unless that one address is trusted
+    trustedProxies: ["${OPENCLAW_TRUSTED_PROXY}"],
     controlUi: {
       // the tailnet HTTPS address (a secure context, which the Control UI's device sign-in needs)
       allowedOrigins: ["${OPENCLAW_PUBLIC_ORIGIN}"],
