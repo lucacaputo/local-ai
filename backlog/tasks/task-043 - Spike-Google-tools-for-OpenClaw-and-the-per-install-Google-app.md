@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08 17:43'
-updated_date: '2026-11-10 23:25'
+updated_date: '2026-11-10 23:32'
 labels: []
 milestone: m-5
 dependencies:
@@ -29,9 +29,9 @@ B1, B2 and B4 need Gmail, Calendar, Drive, Docs and Sheets through the user's ow
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The ways to give OpenClaw Google tools are listed with how each handles per-user OAuth, scopes and stored tokens, and at least two are tried
-- [ ] #2 A Google Cloud project with an External, unverified OAuth app in production exists for the home install, and its setup steps are written down for the install docs
-- [ ] #3 With the owner's consent the agent reads mail, creates a draft, reads the calendar, and edits a Sheet and a Doc through the chosen route
+- [x] #1 The ways to give OpenClaw Google tools are listed with how each handles per-user OAuth, scopes and stored tokens, and at least two are tried
+- [x] #2 A Google Cloud project with an External, unverified OAuth app in production exists for the home install, and its setup steps are written down for the install docs
+- [x] #3 With the owner's consent the agent reads mail, creates a draft, reads the calendar, and edits a Sheet and a Doc through the chosen route
 - [ ] #4 The token still works more than 7 days after consent, or the failure and the fallback (non-domain users use Google through the sandbox browser) are recorded
 - [ ] #5 The choice is recorded in doc-004 with a decision record, including whether users consent twice (sign-in in m-6, and the tools)
 <!-- AC:END -->
@@ -66,4 +66,6 @@ No Google token in the sandbox (files, env) or in the relay/gws/gate logs.
 Pages: lucacaputo/local-ai-privacy-pages (public, owner-approved; commit re-authored to the GitHub no-reply address): https://lucacaputo.github.io/local-ai-privacy-pages/ and /privacy.html. Next: Branding links + authorized domain lucacaputo.github.io, publish, re-consent, D1 clock.
 
 2026-11-11: app local-ai-home published (In production, unverified, Branding with the GitHub Pages links). Re-consent on the published app: ercapperones@gmail.com, 2026-11-10 23:24 UTC (D1 clock starts; a Testing token would die by 2026-11-17 23:24 UTC). Recheck on or after 2026-11-18 that the relay still refreshes (docker logs openclaw-owner-google: 'refreshed', not invalid_grant). Both routes work on the new token.
+
+2026-11-11: AC1 (routes listed in doc-004 decision-016, (a) and (b) tried), AC2 (local-ai-home published; docs/google-app.md) and AC3 (both routes 5/5) checked. AC5 waits for the owner to accept decision-016 (filed as proposed; owner chose to keep version pins). AC4 waits for the D1 check from 2026-11-18.
 <!-- SECTION:NOTES:END -->
