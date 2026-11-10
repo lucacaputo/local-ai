@@ -5,9 +5,7 @@ title: >-
   outside the sandbox; the token and the hard rules stay out of the agent's
   reach; connecting Google is a second, optional consent
 date: '2026-11-10 23:28'
-status: >-
-  proposed (awaiting the owner); context, decision and consequences in doc-004,
-  section decision-016
+status: 'accepted; context, decision and consequences in doc-004, section decision-016'
 ---
 ## Context
 
