@@ -3,7 +3,7 @@ id: doc-004
 title: Agent stack changes and decisions
 type: other
 created_date: '2026-11-08 17:38'
-updated_date: '2026-11-09 18:45'
+updated_date: '2026-11-10 23:28'
 ---
 # Agent stack changes and decisions
 
@@ -157,14 +157,82 @@ OpenClaw accepts a verified identity from a trusted proxy in front of it. With a
 - One startup request from OpenClaw to `clawhub.ai`, its plugin hub, still goes out. Its caller names the address itself, so `OPENCLAW_CLAWHUB_URL` cannot redirect it. It is public, so the gate lets it through; the owner chose not to block it.
 - Programs on the PC can still set the identity header on the router's loopback port; the user accepted that in TASK-022.
 
+## decision-016: The agent's Google tools are workspace-mcp in a container of each user's own, outside the sandbox; the token and the hard rules stay out of the agent's reach; connecting Google is a second, optional consent
+
+**Context.** doc-003 assumed OpenClaw had no MCP support. OpenClaw 2026.9.36 has a full MCP client (`mcp.servers`: stdio, SSE, streamable HTTP, OAuth sign-in for HTTP servers). Its tools appear as `<server>__<tool>` under the same tool policy. The ways to give the agent Google tools (TASK-043):
+
+| Route | Per-user OAuth | Where the token lives |
+|---|---|---|
+| (a) The bundled `gog` skill with gogcli in the sandbox | `gog auth add` per account | The sandbox volume, unless relay mode (`GOG_GOOGLE_API_BASE_URL`): gog then attaches no credentials, and a relay outside adds them |
+| (b) workspace-mcp outside the sandbox, one per user | Its own flow, OAuth 2.1 multi-user, or a sign-in made elsewhere | Its container's volume |
+| (c) workspace-mcp over stdio inside the sandbox | Its own flow | The sandbox volume, readable by the agent |
+| (d) The sandbox browser | The user signs in to Google there | Google's session cookies in the sandbox volume |
+| (e) Our own MCP server | Ours to build | Ours to choose |
+
+(a) with a relay and (b) were tried on the home install: one consent on the new `local-ai-home` app, the bench account, the local model. Both did the five tasks; results in "Google tools trial" below. What decided it:
+
+- **The local model is better with the MCP tools.** (b) used 1-4 calls and 7-32 s a task. (a) used up to 13 calls and up to 57 s. For Docs it needed a hint that `gog docs write --append` exists: it first said gog cannot edit Docs. With both routes present it mixed them.
+- **A tool layer is not a boundary.** The sandbox can call workspace-mcp directly (`gws:8000`, no MCP authentication in single-user mode), around OpenClaw's tool policy. Only limits on the server count.
+  - workspace-mcp's tools are coarse: `manage_event` creates, changes and deletes calendar events, so deletion cannot be removed on its own.
+  - Its "core" tier has `send_gmail_message` but no draft tool.
+- **A relay on the API calls is a boundary**, whatever the client:
+  - It refused sending, deleting and sharing for gog.
+  - A rule on the path alone missed Drive's trash, which is a `PATCH {"trashed": true}`. Rules must read the request body.
+- **No Google token reached the sandbox** in either route: none in its files, its environment or the logs.
+
+**Decision.**
+
+- **Tools: workspace-mcp**, pinned (2.2.0 today):
+  - One container per user, `openclaw-<user>-gws`, on that user's sandbox network only, reached as `gws:8000` through the gate (`GATE_SERVICES`, TASK-043).
+  - Its tier is "extended" for Gmail, Calendar, Drive, Docs and Sheets. The tools that send mail, share files or add mail filters (a filter can forward mail) are removed on the server.
+  - OpenClaw allows `google__*`.
+  - gog is not installed: one route, so the model does not mix them.
+- **The token stays outside the sandbox.** A user's refresh token lives only in that user's Google containers, which the agent cannot read. Today Credential Manager hands it to them; in m-6, the portal will.
+- **Hard rules on the API calls.** What must hold whatever the agent does (send, delete or trash, share) is checked on the Google API calls themselves, request bodies included, in a per-user relay like the trial's.
+  - TASK-044 decides how workspace-mcp's calls go through it, and how a refusal becomes a confirmation for the user.
+  - Until then, removing tools on the server is the only guard, and calendar deletion is not covered.
+- **Consent in two steps, on one OAuth app.**
+  1. Everyone signs in with Google (oauth2-proxy, decision-012): openid and email only.
+  2. "Connect Google" on the web page then asks for the tools' scopes only (incremental authorization). It is optional per user.
+
+  Users who connect Google consent twice, and the second time only for the tools. The reasons:
+  - oauth2-proxy keeps the refresh token for its own session and does not hand it on. One consent would mean the portal doing the sign-in itself, which would undo decision-012.
+  - Signing in should not require giving the agent your mail.
+  - Each user grants only what they use.
+
+  The unverified-app warning can appear at both steps.
+- **Scopes:** `gmail.modify`, `gmail.settings.basic` (workspace-mcp's Gmail tools need it), `calendar`, `drive`, `documents`, `spreadsheets`, plus sign-in's own. Not `mail.google.com`, which allows deleting mail for good.
+- **OAuth clients:**
+  - m-6 adds a Web client, whose redirect is the portal's tailnet HTTPS address. oauth2-proxy uses the same client.
+  - The Desktop client from the trial signs in only from the PC (loopback redirect). It stays for the owner's setup and the tests.
+  - Setup steps: `docs/google-app.md`.
+
+**Alternatives considered.**
+
+- **(a) gog with the relay:** the strongest boundary by design, and the relay idea is kept. But the local model did worse with it, and two routes made it mix them.
+- **(c) workspace-mcp inside the sandbox:** the agent could read the token.
+- **(d) The browser only:** no API, slow, and the Google session lives in the sandbox. It stays the fallback if D1 fails.
+- **(e) Our own MCP server:** more code to write, when workspace-mcp covers the five services.
+- **One consent:** the portal doing sign-in with all scopes, or workspace-mcp's external-OAuth mode taking tokens from the sign-in. Rejected for now, for the reasons above.
+
+**Consequences.**
+
+- **More containers per user:** workspace-mcp, about 115 MB of RAM, and later the relay, about 26 MB.
+- **workspace-mcp brings 91 Python packages.** The image needs a hash-locked requirements file, as the sandbox's has. The trial only limited them to releases at least two weeks old.
+- **Each workspace-mcp serves one user** and is reachable only from that user's sandbox network, so its lack of client authentication exposes nobody else.
+- **New install step:** the Google app (`docs/google-app.md`). Its Branding points at the shared pages in `lucacaputo/local-ai-privacy-pages`.
+- **D1 is not yet confirmed:**
+  - Re-consent on the published app was on 2026-11-10 at 23:24 UTC, and the check is due from 2026-11-18.
+  - If the sign-in stops working, the fallback is (d), and this decision is revisited.
+- **Encryption at rest** of the token volumes is still open (AN7).
+
 ## Open decisions
 
 Not decided yet; each one gets a decision record when it is settled.
 
 | Topic | Depends on | Notes |
 |---|---|---|
-| Where confirmations are enforced (AF5, AN8; doc-003 P9) | Trying OpenClaw's exec approvals and `ask_user` | A hard gate the model cannot skip, at least for Google actions (send, delete, share) and form submits |
-| How the Google tools are added | Whether OpenClaw takes MCP servers; `workspace-mcp` (multi-user OAuth 2.1) as the candidate | Also decides whether users consent twice (sign-in and tools) |
+| Where confirmations are enforced (AF5, AN8; doc-003 P9) | Trying OpenClaw's exec approvals and `ask_user`; for Google, the relay of decision-016 (TASK-044) | A hard gate the model cannot skip, at least for Google actions (send, delete, share) and form submits |
 | Notifications (D2) | OpenClaw's Google Chat channel plugin; Web Push from the portal for non-domain users | doc-003 P5 |
 | Encryption at rest | decision-011 | BitLocker, or encrypted volumes |
 
@@ -264,3 +332,29 @@ The home install has few people at once, and the office is a separate 24 GB entr
   - The browser opens Wikipedia. It shows the gate's refusal for 192.168.1.1 and for `127.0.0.1:18789`.
   - Bench task B3 (form on a fixture site) passes: all fields right, no submit, confirmation asked.
 - **Gate unit tests:** `sandbox\gate`, `npm test` (11 tests) and `npm run typecheck`.
+
+## Google tools trial (TASK-043, m-5)
+
+Home PC, 2026-11-10/11:
+- One consent on `local-ai-home`, published, unverified, with the bench test account.
+- The local model (`local-coder-vision`), prompts in Italian as a non-coder would write them.
+- Seed data tagged "T043": a message in the inbox, an event, a Sheet and a Doc.
+- Setup: `spike/task-043/` (`google-consent.ps1`, `trial.ps1`, `relay.ts`, the workspace-mcp image, the trial OpenClaw config).
+
+| Task | (a) gog 0.47.0 + relay | (b) workspace-mcp 2.2.0 |
+|---|---|---|
+| Read a mail and say what it asks | Pass, 57 s, 5 calls | Pass, 7 s, 2 calls |
+| Draft a reply, not sent | Pass, 32 s, 13 calls | Pass, 25 s, 3 calls, after switching to the extended tier |
+| Read the calendar | Pass, 12 s (also spotted a clash) | Pass, 21 s, 1 call |
+| Add a row to a Sheet and total it | Pass, 15 s | Pass, 9 s, 3 calls |
+| Add a line to a Doc | Pass, 52 s, with a hint (`--append`); without it, it used (b)'s tools | Pass, 32 s, 4 calls |
+
+- **Relay (a):**
+  - It refused `messages/send` and `drafts/send`, DELETE, trash and Drive sharing with a 403 the agent can read.
+  - It first let Drive's trash through (`PATCH {"trashed": true}`): the empty duplicate Doc went to the bin. It now reads Drive metadata bodies.
+  - gog accepts a plain-HTTP relay on a non-loopback name.
+- **workspace-mcp (b):**
+  - Called directly from the sandbox (curl, without OpenClaw), it listed 48 tools, none of which sends or shares, after `--disabled-tools`.
+  - OpenClaw connects to it as a CONNECT through the gate to `gws:8000`.
+- **Tokens:** none in the sandbox's files or environment, or in the relay, workspace-mcp and gate logs.
+- **Gate:** `GATE_SERVICES` (exact host:port pairs). Unit tests: 12.
