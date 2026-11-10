@@ -19,27 +19,31 @@ const echo = http.createServer((req, res) => {
 const routerSrv = http.createServer((req, res) => res.end(JSON.stringify({ url: req.url, headers: req.headers })));
 const logs: LogEvent[] = [];
 const routerLogs: RouterLogEvent[] = [];
-let web = 0, router = 0, proxy = 0, pass = 0;
+// a service on a private address (127.0.0.2: loopback, but not "public" here), allowed by name and port only
+const svcSrv = http.createServer((req, res) => res.end(`svc ${req.method} ${req.url}`));
+let web = 0, router = 0, proxy = 0, pass = 0, svc = 0;
 let gate: http.Server, routerPass: http.Server;
 
 const NAMES: Record<string, string[]> = {
   'public.example': ['127.0.0.1'], 'lan.example': ['192.168.1.1'], 'mixed.example': ['127.0.0.1', '10.0.0.5'],
+  'relay': ['127.0.0.2'], 'other': ['127.0.0.2'],
 };
 
 before(async () => {
   web = await listen(echo);
+  svc = await new Promise<number>((r) => svcSrv.listen(0, '127.0.0.2', () => r((svcSrv.address() as AddressInfo).port)));
   router = await listen(routerSrv);
   const toRouter = routerHandler({ target: { host: '127.0.0.1', port: router }, log: (e) => routerLogs.push(e) });
   routerPass = createRouterPass(toRouter);
   pass = await listen(routerPass);
   gate = createGate({
-    ports: [web], local: { hosts: ['gate'], port: 4000, handle: toRouter, tunnelTo: pass },
+    ports: [web], local: { hosts: ['gate'], port: 4000, handle: toRouter, tunnelTo: pass }, services: [`Relay:${svc}`],
     resolve: async (h) => { if (!NAMES[h]) throw new Error('ENOTFOUND'); return NAMES[h]; },
     isPublic: (ip) => ip === '127.0.0.1', log: (e) => logs.push(e),
   });
   proxy = await listen(gate);
 });
-after(() => { gate.close(); routerPass.close(); echo.close(); routerSrv.close(); });
+after(() => { gate.close(); routerPass.close(); echo.close(); routerSrv.close(); svcSrv.close(); });
 
 // one request through the proxy with an absolute URL
 function viaProxy(url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) {
@@ -154,6 +158,19 @@ test('CONNECT: tunnels to public destinations only', async () => {
   assert.equal((await tunnel(`lan.example:${web}`)).status, 403);
   assert.equal((await tunnel(`[fe80::1]:${web}`)).status, 403);
   assert.equal((await tunnel(`public.example:${router}`)).status, 403);
+});
+
+test('services: the listed name and port only, by absolute URL or tunnel', async () => {
+  const r = await viaProxy(`http://relay:${svc}/gmail/v1/users/me/messages?q=x`, { method: 'POST', body: '{}' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body, 'svc POST /gmail/v1/users/me/messages?q=x');
+  const t = await tunnel(`relay:${svc}`);
+  assert.equal(t.status, 200);
+  assert.match(t.inner ?? '', /svc GET \/in-tunnel/);
+  // the same address under another name, or the service's name on another port, is a private destination
+  assert.equal((await viaProxy(`http://other:${svc}/`)).status, 403);
+  assert.equal((await viaProxy(`http://relay:${web}/`)).status, 403);
+  assert.equal((await tunnel(`other:${svc}`)).status, 403);
 });
 
 test('the log has destinations and verdicts, never paths', () => {

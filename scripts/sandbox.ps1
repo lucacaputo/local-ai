@@ -19,7 +19,10 @@ param(
   [ValidatePattern('^[a-z][a-z0-9-]{0,30}$')][string]$User = 'owner',
   [int]$Port = 18789,            # host loopback port of this user's gateway
   [int]$TailnetPort = 8443,      # HTTPS port on the tailnet
-  [string]$Memory = '4g'
+  [string]$Memory = '4g',
+  # containers on the sandbox network the gate lets the sandbox reach, "<host>:<port>" (TASK-043 trial: the Google
+  # relay and MCP server, spike\task-043\trial.ps1)
+  [ValidatePattern('^[a-z0-9][a-z0-9.-]*:\d+$')][string[]]$Services = @()
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\secrets.ps1"
@@ -95,7 +98,7 @@ switch ($Action) {
     $hardening = @('--security-opt', 'no-new-privileges', '--cap-drop', 'ALL', '--label', "local-ai.user=$User")
     # The gate: on the default bridge (the internet, the host) and, as "gate", on the sandbox network
     Invoke-Docker (@('run', '-d', '--name', $gate, '--network', 'bridge', '-p', "127.0.0.1:${Port}:18789",
-        '-e', "GATE_FORWARDS=18789=${name}:18789", '--read-only', '--memory', '128m', '--label', 'local-ai.gate=1') + $hardening + @($gateImage)) | Out-Null
+        '-e', "GATE_FORWARDS=18789=${name}:18789", '-e', "GATE_SERVICES=$($Services -join ',')", '--read-only', '--memory', '128m', '--label', 'local-ai.gate=1') + $hardening + @($gateImage)) | Out-Null
     Invoke-Docker @('network', 'connect', '--alias', 'gate', $network, $gate) | Out-Null
     # tailscale serve's traffic reaches the gateway from the gate's address on the sandbox network, and the gate is
     # the sandbox's DNS (placeholder answers only)

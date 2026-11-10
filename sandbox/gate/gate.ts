@@ -49,6 +49,9 @@ export interface GateOptions {
   ports?: number[];
   // the gate's own router pass, asked for through the proxy: absolute URLs go to handle, tunnels to 127.0.0.1:tunnelTo
   local?: { hosts: string[]; port: number; handle: RouterHandler; tunnelTo: number };                                  // destination ports allowed on the internet
+  // named containers on the sandbox network the sandbox may reach through the proxy, "host:port" (TASK-043: the
+  // Google relay and MCP server); private addresses are fine for these exact pairs and nothing else
+  services?: string[];
   resolve?: (host: string) => Promise<string[]>;
   isPublic?: (ip: string) => boolean;
   log?: (e: LogEvent) => void;
@@ -64,14 +67,19 @@ function endToEnd(h: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
 
 export function createGate(o: GateOptions): http.Server {
   const ports = o.ports ?? [80, 443];
+  const services = new Set((o.services ?? []).map((x) => x.toLowerCase()));
   const resolve = o.resolve ?? resolveAll;
   const pub = o.isPublic ?? isPublic;
   const log = o.log ?? ((e: LogEvent) => console.log(JSON.stringify({ t: new Date().toISOString(), ...e })));
 
   async function decide(rawHost: string, port: number): Promise<Verdict> {
     const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
-    if (!ports.includes(port)) return { ok: false, reason: `port ${port} not allowed` };
     let ips: string[];
+    if (services.has(`${host}:${port}`)) {
+      try { ips = await resolve(host); } catch { return { ok: false, reason: 'no address' }; }
+      return ips.length ? { ok: true, ip: ips[0], reason: 'service' } : { ok: false, reason: 'no address' };
+    }
+    if (!ports.includes(port)) return { ok: false, reason: `port ${port} not allowed` };
     try { ips = net.isIP(host) ? [host] : await resolve(host); } catch { return { ok: false, reason: 'no address' }; }
     if (ips.length === 0) return { ok: false, reason: 'no address' };
     const bad = ips.find((ip) => !pub(ip));

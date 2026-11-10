@@ -4,6 +4,7 @@
 //                    and through the proxy as http://<GATE_NAME>:<GATE_ROUTER_PORT> (default name gate)
 //   GATE_FORWARDS    TCP forwards into the sandbox, "<listen>=<host>:<port>,..."
 //   GATE_DNS_PORT    the placeholder DNS for the sandbox, UDP (default 53)
+//   GATE_SERVICES    containers on the sandbox network reachable through the proxy, "<host>:<port>,..." (default none)
 import { createFakeDns, createForward, createGate, createRouterPass, parseForwards, routerHandler } from './gate.ts';
 
 const [rhost, rport] = (process.env.GATE_ROUTER ?? 'host.docker.internal:4000').split(':');
@@ -11,7 +12,9 @@ const proxyPort = Number(process.env.GATE_PROXY_PORT ?? 3128);
 const routerPort = Number(process.env.GATE_ROUTER_PORT ?? 4000);
 const say = (o: object) => console.log(JSON.stringify({ t: new Date().toISOString(), ...o }));
 const toRouter = routerHandler({ target: { host: rhost, port: Number(rport) } });
-createGate({ local: { hosts: [process.env.GATE_NAME ?? 'gate'], port: routerPort, handle: toRouter, tunnelTo: routerPort } }).listen(proxyPort, () => say({ proxy: proxyPort }));
+const services = (process.env.GATE_SERVICES ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+for (const x of services) if (!/^[a-z0-9][a-z0-9.-]*:\d+$/i.test(x)) throw new Error(`bad service "${x}": use <host>:<port>`);
+createGate({ local: { hosts: [process.env.GATE_NAME ?? 'gate'], port: routerPort, handle: toRouter, tunnelTo: routerPort }, services }).listen(proxyPort, () => say({ proxy: proxyPort }));
 createRouterPass(toRouter).listen(routerPort, () => say({ router: `${routerPort} -> ${rhost}:${rport}` }));
 for (const f of parseForwards(process.env.GATE_FORWARDS ?? '')) {
   createForward(f).listen(f.listen, () => say({ forward: `${f.listen} -> ${f.host}:${f.port}` }));

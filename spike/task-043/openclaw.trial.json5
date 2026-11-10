@@ -1,0 +1,112 @@
+// TASK-043 TRIAL ONLY: config/openclaw.json5 plus the two Google routes, copied over the image's config by
+// spike\task-043\trial.ps1 (scripts\sandbox.ps1 start puts the image's own back). Changes from the repo's config
+// are marked "TASK-043".
+//
+// OpenClaw in a user's sandbox container (TASK-041, decision-010). Baked read-only into the image
+// (sandbox/Dockerfile), so the agent, which runs as the same user, cannot widen its own tools or plugins.
+// Machine-specific values come from environment variables set by scripts\sandbox.ps1.
+// Network (TASK-042): the container is on an internal Docker network with no route out; its gate (sandbox/gate) is
+// the forward proxy for the web, passes the router on gate:4000, and forwards the Control UI port in.
+{
+  gateway: {
+    mode: "local",
+    // inside the container; the gate publishes it on the host's loopback only, and tailscale serve puts it on the tailnet
+    bind: "lan",
+    port: 18789,
+    auth: { mode: "token", token: { source: "env", provider: "default", id: "OPENCLAW_GATEWAY_TOKEN" } },
+    // the gate's address on the sandbox network: tailscale serve's forwarding headers arrive through it and are
+    // rejected unless that one address is trusted
+    trustedProxies: ["${OPENCLAW_TRUSTED_PROXY}"],
+    controlUi: {
+      // the tailnet HTTPS address (a secure context, which the Control UI's device sign-in needs)
+      allowedOrigins: ["${OPENCLAW_PUBLIC_ORIGIN}"],
+      communityInvite: false,
+      automaticallyFetchFavicons: false,
+      sessionObserver: false,   // would run the model for status digests
+    },
+  },
+
+  // The router, local models only (decision-013). Option A of TASK-039: 131072 tokens shared by two slots.
+  models: {
+    mode: "replace",
+    catalogRefresh: { enabled: false },
+    providers: {
+      local: {
+        baseUrl: "http://gate:4000/v1",
+        // this sandbox's own key: the router lets it ask the local models and nothing else (config/custom_auth.py)
+        apiKey: { source: "env", provider: "default", id: "LOCAL_AI_SANDBOX_KEY" },
+        api: "openai-completions",
+        timeoutSeconds: 600,   // a cold model load takes about 15 s, a long prompt minutes
+        models: [
+          {
+            id: "local-coder-vision",
+            name: "Qwen3.8 27B (local)",
+            reasoning: true,
+            input: ["text", "image"],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 131072,
+            maxTokens: 32000,   // as the coding clients (config/opencode.json)
+          },
+        ],
+      },
+    },
+  },
+
+  agents: {
+    defaults: {
+      model: { primary: "local/local-coder-vision" },
+      workspace: "/home/node/work",
+      sandbox: { mode: "off" },   // the container is the sandbox; no nested Docker
+      skills: ["browser-automation", "gog"],   // TASK-043: + gog, route (a)
+    },
+  },
+
+  // Only what the bake-off tasks need (doc-003 section 8); everything else is unavailable.
+  tools: {
+    allow: [
+      "ls", "read", "write", "edit", "apply_patch",
+      "exec", "process",
+      "web_fetch", "browser", "view_image",   // PDFs: pypdf in the shell (the pdf tool needs a model that reads PDFs natively)
+      "ask_user", "session_status",
+      "google__*",   // TASK-043: workspace-mcp's tools, route (b)
+    ],
+    exec: { host: "gateway", security: "full", ask: "off" },   // runs inside the container
+    // the gate resolves names and refuses private addresses; the container has no DNS of its own for the web
+    web: { fetch: { useTrustedEnvProxy: true } },
+    toolSearch: false,   // offer the allowed tools directly instead of behind search/describe/call
+  },
+
+  browser: {
+    enabled: true,
+    headless: true,
+    // Chromium's own sandbox needs user namespaces, which the container does not grant; the container is the
+    // boundary, and a page that escaped the renderer would get what the agent already has (a shell in it)
+    noSandbox: true,
+    // OpenClaw's managed proxy does not cover the browser, so Chromium gets the gate as its proxy. "<-loopback>" sends
+    // the container's own loopback there too (the gate refuses it); only the bench's fixture sites (.test, on a
+    // Docker network of their own, bench/agent) are reached directly
+    extraArgs: ["--proxy-server=http://gate:3128", "--proxy-bypass-list=*.test;<-loopback>"],
+    // OpenClaw refuses to drive a proxied browser under its strict private-network policy (it cannot see where the
+    // proxy connects). The gate is the boundary instead: it resolves every name and refuses private addresses
+    // (TASK-042, option A approved by the owner). The sandbox's DNS is the gate's placeholder answer, 198.18.0.1
+    // (RFC 2544 range), which OpenClaw checks before navigating; the browser then sends the name to the proxy.
+    ssrfPolicy: { dangerouslyAllowPrivateNetwork: true, allowRfc2544BenchmarkRange: true },
+  },
+
+  // Plugins and skills only from this list (AF10); the memory plugin would schedule its own model runs.
+  plugins: { allow: ["browser", "bundle-mcp"], slots: { memory: "none" } },   // TASK-043: + configured MCP servers
+  skills: { allowBundled: ["browser-automation", "gog"], workshop: { autonomous: { mode: "off" } } },
+
+  // TASK-043 route (b): workspace-mcp in its own container, reached through the gate (GATE_SERVICES gws:8000)
+  mcp: {
+    servers: {
+      google: { url: "http://gws:8000/mcp", transport: "streamable-http", connectionTimeoutMs: 30000, requestTimeoutMs: 120000 },
+    },
+  },
+
+  // All of OpenClaw's own HTTP and WebSocket traffic, model calls included, through the gate; loopback stays direct.
+  proxy: { proxyUrl: "http://gate:3128", loopbackMode: "gateway-only" },
+
+  update: { checkOnStart: false },
+  telemetry: { enabled: false },
+}
